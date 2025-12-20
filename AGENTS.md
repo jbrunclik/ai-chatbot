@@ -76,6 +76,7 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - Run `make lint` before committing
 - **Bump `Config.VERSION`** in [config.py](src/config.py) before committing frontend changes (cache busting)
 - Frontend: ES modules, no build step
+- **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
 
 ## iOS Safari Gotchas
 
