@@ -16,8 +16,9 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Show thinking/tool details** - Display model reasoning and tool execution behind a toggle
 - [ ] Improve error handling and user feedback
 - [ ] Add loading states and animations
-- [ ] Conversation rename/delete functionality
-- [ ] Mobile gesture support (swipe to open sidebar)
+- [x] Conversation delete functionality
+- [ ] Conversation rename functionality
+- [x] Mobile gesture support (swipe to open sidebar, swipe to delete conversations)
 
 ## Phase 3 - Tools & Extensions
 - [x] **Tool framework** - Extensible system for adding agent tools
@@ -42,6 +43,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Rate limiting
 - [ ] Request logging and monitoring
 - [x] Database migrations system (yoyo-migrations)
+- [ ] **Cost tracking** - Track API costs per user and per conversation
 - [ ] Backup and restore
 - [ ] Docker deployment option
 

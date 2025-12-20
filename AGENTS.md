@@ -81,6 +81,15 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - Frontend: ES modules, no build step
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
 
+## Touch Gestures
+
+The app uses a reusable swipe gesture system (`createSwipeHandler` in [app.js](src/static/app.js)):
+
+1. **Conversation swipe-to-delete**: Swipe left on a conversation item to reveal delete button, swipe right to close
+2. **Sidebar swipe-to-open**: Swipe from left edge (within 50px) to open sidebar, swipe left on main content to close
+
+The swipe handler prevents conflicts by giving priority to more specific gestures (conversation swipes) over global gestures (sidebar edge swipe).
+
 ## iOS Safari Gotchas
 
 When working on mobile/PWA features, beware of these iOS Safari issues:

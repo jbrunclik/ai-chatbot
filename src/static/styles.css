@@ -85,17 +85,31 @@ body {
     -webkit-overflow-scrolling: touch;
 }
 
+/* Conversation item wrapper for swipe-to-delete */
+.conversation-item-wrapper {
+    position: relative;
+    margin-bottom: 4px;
+    overflow: hidden;
+    border-radius: var(--radius-sm);
+}
+
 .conversation-item {
     padding: 12px;
     border-radius: var(--radius-sm);
     cursor: pointer;
-    margin-bottom: 4px;
-    transition: background-color 0.15s;
+    transition: background-color 0.15s, transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     display: flex;
     justify-content: space-between;
     align-items: center;
     -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
-    touch-action: manipulation;
+    touch-action: pan-y;
+    background-color: var(--bg-secondary);
+    position: relative;
+    z-index: 2;
+    /* Ensure it completely covers the delete button */
+    width: 100%;
+    min-width: 100%;
+    box-sizing: border-box;
 }
 
 .conversation-item:hover {
@@ -114,6 +128,7 @@ body {
     flex: 1;
 }
 
+/* Regular delete button (desktop hover) */
 .conversation-delete {
     opacity: 0;
     background: none;
@@ -128,10 +143,52 @@ body {
     opacity: 1;
 }
 
-/* On touch devices, always show delete button */
+/* Swipe-to-reveal delete button - only rendered on touch devices */
+.conversation-delete-swipe {
+    display: none;
+}
+
+/* Touch devices: hide regular delete, show swipe delete */
 @media (hover: none) {
     .conversation-delete {
+        display: none;
+    }
+
+    .conversation-delete-swipe {
+        position: absolute;
+        right: -80px;
+        top: 0;
+        bottom: 0;
+        width: 80px;
+        background-color: var(--error);
+        color: white;
+        border: none;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1;
+        border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        transition: right 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        /* Completely hidden when not swiped */
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* Swiped state - slide item left and delete button in */
+    .conversation-item-wrapper.swiped .conversation-item {
+        transform: translateX(-80px);
+        /* Remove right border-radius when swiped for clean edge */
+        border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    }
+
+    /* Show delete button when swiped */
+    .conversation-item-wrapper.swiped .conversation-delete-swipe {
+        right: 0;
         opacity: 1;
+        pointer-events: auto;
     }
 }
 
@@ -275,9 +332,13 @@ body {
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
+    position: relative;
 }
 
 .mobile-header span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -928,13 +989,17 @@ body {
     border-radius: 50%;
     width: 20px;
     height: 20px;
-    font-size: 14px;
-    line-height: 1;
+    padding: 0;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background-color 0.15s;
+}
+
+.file-preview-remove svg {
+    width: 12px;
+    height: 12px;
 }
 
 .file-preview-remove:hover {
@@ -1129,4 +1194,14 @@ body {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Drag and drop file upload */
+.input-area.drag-over {
+    background-color: var(--bg-secondary);
+}
+
+.input-area.drag-over .input-container {
+    border-color: var(--accent);
+    background-color: rgba(99, 102, 241, 0.1);
 }
