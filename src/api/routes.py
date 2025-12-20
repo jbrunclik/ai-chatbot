@@ -1,15 +1,9 @@
 from typing import Any
 
-from flask import Blueprint, request, url_for
+from flask import Blueprint, request
 
 from src.agent.chat_agent import ChatAgent
-from src.auth.google_oauth import (
-    GoogleOAuthError,
-    exchange_code_for_tokens,
-    get_authorization_url,
-    get_user_info,
-    is_email_allowed,
-)
+from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
 from src.db.models import db
@@ -23,33 +17,22 @@ auth = Blueprint("auth", __name__, url_prefix="/auth")
 # ============================================================================
 
 
-@auth.route("/login")
-def login() -> tuple[dict[str, str], int] | dict[str, str]:
-    """Redirect to Google OAuth login."""
+@auth.route("/google", methods=["POST"])
+def google_auth() -> tuple[dict[str, Any], int]:
+    """Authenticate with Google ID token from Sign In with Google."""
     if Config.LOCAL_MODE:
         return {"error": "Authentication disabled in local mode"}, 400
 
-    redirect_uri = url_for("auth.callback", _external=True)
-    auth_url = get_authorization_url(redirect_uri)
-    return {"auth_url": auth_url}
+    data = request.get_json() or {}
+    id_token = data.get("credential")
 
-
-@auth.route("/callback")
-def callback() -> tuple[dict[str, Any], int] | dict[str, Any]:
-    """Handle Google OAuth callback."""
-    if Config.LOCAL_MODE:
-        return {"error": "Authentication disabled in local mode"}, 400
-
-    code = request.args.get("code")
-    if not code:
-        return {"error": "Missing authorization code"}, 400
+    if not id_token:
+        return {"error": "Missing credential"}, 400
 
     try:
-        redirect_uri = url_for("auth.callback", _external=True)
-        tokens = exchange_code_for_tokens(code, redirect_uri)
-        user_info = get_user_info(tokens["access_token"])
-    except GoogleOAuthError as e:
-        return {"error": str(e)}, 400
+        user_info = verify_google_id_token(id_token)
+    except GoogleAuthError as e:
+        return {"error": str(e)}, 401
 
     email = user_info.get("email", "")
     if not is_email_allowed(email):
@@ -73,7 +56,13 @@ def callback() -> tuple[dict[str, Any], int] | dict[str, Any]:
             "name": user.name,
             "picture": user.picture,
         },
-    }
+    }, 200
+
+
+@auth.route("/client-id", methods=["GET"])
+def get_client_id() -> dict[str, str]:
+    """Return Google Client ID for frontend initialization."""
+    return {"client_id": Config.GOOGLE_CLIENT_ID}
 
 
 @auth.route("/me")

@@ -9,7 +9,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - Multiple conversations with history
 - Model selection (Gemini 3 Pro for complex tasks, Flash for speed)
 - Markdown rendering with syntax highlighting
-- Google OAuth authentication with email whitelist
+- Google Sign In authentication with email whitelist
 - Modern dark theme, mobile-first responsive design
 - Local development mode (no auth required)
 
@@ -18,7 +18,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - **Backend**: Python 3, Flask, LangGraph/LangChain
 - **Frontend**: Pure JavaScript (ES modules, no build step)
 - **Database**: SQLite
-- **Auth**: Google OAuth + JWT tokens
+- **Auth**: Google Identity Services (GIS) + JWT tokens
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 
 - Python 3.11+
 - Google Gemini API key ([Get one here](https://aistudio.google.com/apikey))
-- (Optional) Google OAuth credentials for authentication
+- (Optional) Google Cloud project for authentication
 
 ### Installation
 
@@ -53,12 +53,26 @@ GEMINI_API_KEY=your-gemini-api-key
 # For local development (no auth)
 LOCAL_MODE=true
 
-# For production with Google OAuth
+# For production with Google Sign In
 GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-client-secret
 JWT_SECRET_KEY=your-secret-key
 ALLOWED_EMAILS=user1@gmail.com,user2@gmail.com
 ```
+
+### Setting up Google Sign In
+
+To enable authentication (required for production):
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create a new project (or select an existing one)
+3. Click **Create Credentials** → **OAuth client ID**
+4. Select **Web application** as the application type
+5. Add **Authorized JavaScript origins**:
+   - `http://localhost:8000` (for development)
+   - `https://yourdomain.com` (for production)
+6. Copy the **Client ID** to your `.env` file
+
+No client secret is needed - the app uses Google Identity Services which validates tokens server-side.
 
 ### Running
 
@@ -101,7 +115,7 @@ ai-chatbot/
 ├── src/
 │   ├── app.py              # Flask application entry point
 │   ├── config.py           # Configuration from environment
-│   ├── auth/               # Google OAuth + JWT authentication
+│   ├── auth/               # Google Sign In + JWT authentication
 │   ├── api/                # REST API routes
 │   ├── agent/              # LangGraph agent and tools
 │   ├── db/                 # SQLite models
