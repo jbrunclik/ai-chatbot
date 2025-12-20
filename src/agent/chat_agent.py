@@ -334,3 +334,48 @@ class ChatAgent:
                 )
 
         return response_text, new_state
+
+
+def generate_title(user_message: str, assistant_response: str) -> str:
+    """
+    Generate a concise title for a conversation using Gemini.
+
+    Args:
+        user_message: The first user message
+        assistant_response: The assistant's response
+
+    Returns:
+        A short, descriptive title (max ~50 chars)
+    """
+    # Use Flash model for fast, cheap title generation
+    model = ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
+        google_api_key=Config.GEMINI_API_KEY,
+        temperature=0.7,
+    )
+
+    prompt = f"""Generate a very short, concise title (3-6 words max) for this conversation.
+The title should capture the main topic or intent.
+Do NOT use quotes around the title.
+Do NOT include prefixes like "Title:" or "Topic:".
+Just output the title text directly.
+
+User: {user_message[:500]}
+Assistant: {assistant_response[:500]}
+
+Title:"""
+
+    try:
+        response = model.invoke([HumanMessage(content=prompt)])
+        title = extract_text_content(response.content).strip()
+        # Clean up any quotes or prefixes that slipped through
+        title = title.strip("\"'")
+        if title.lower().startswith("title:"):
+            title = title[6:].strip()
+        # Truncate if too long
+        if len(title) > 60:
+            title = title[:57] + "..."
+        return title or user_message[:50]
+    except Exception:
+        # Fallback to truncated message on any error
+        return user_message[:50] + ("..." if len(user_message) > 50 else "")
