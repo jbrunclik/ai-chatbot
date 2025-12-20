@@ -461,6 +461,21 @@ function finalizeStreamingMessage(messageEl, content) {
     elements.messages.scrollTop = elements.messages.scrollHeight;
 }
 
+function getUserAvatar() {
+    if (state.user?.picture) {
+        return `<img src="${state.user.picture}" alt="Avatar" referrerpolicy="no-referrer">`;
+    }
+    // Get initials from name
+    if (state.user?.name) {
+        const parts = state.user.name.trim().split(/\s+/);
+        if (parts.length >= 2) {
+            return parts[0][0].toUpperCase() + parts[parts.length - 1][0].toUpperCase();
+        }
+        return parts[0][0].toUpperCase();
+    }
+    return 'U';
+}
+
 function addMessageToUI(role, content) {
     // Remove welcome message if present
     const welcome = elements.messages.querySelector('.welcome-message');
@@ -471,7 +486,11 @@ function addMessageToUI(role, content) {
 
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
-    avatar.textContent = role === 'user' ? 'U' : 'AI';
+    if (role === 'user') {
+        avatar.innerHTML = getUserAvatar();
+    } else {
+        avatar.textContent = 'AI';
+    }
 
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content';

@@ -8,7 +8,7 @@ load_dotenv()
 
 class Config:
     # App version (bump this to bust static file caches)
-    VERSION = "1.1.0"
+    VERSION = "1.1.1"
 
     # Base paths
     BASE_DIR = Path(__file__).parent.parent
