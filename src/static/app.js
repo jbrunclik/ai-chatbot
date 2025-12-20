@@ -311,6 +311,11 @@ async function sendMessage() {
     autoResizeTextarea();
     updateSendButton();
 
+    // iOS Safari: blur input to dismiss keyboard and fix viewport
+    elements.messageInput.blur();
+    // Force scroll reset to fix iOS viewport bug
+    window.scrollTo(0, 0);
+
     // Choose streaming or batch mode
     if (state.streamingEnabled) {
         await sendMessageStream(content, filesToSend);
