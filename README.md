@@ -5,12 +5,16 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 ## Features
 
 - Chat with Google Gemini AI models (Pro and Flash)
+- **Streaming responses**: Real-time token-by-token display (toggleable)
+- **File uploads**: Images, PDFs, and text files with multimodal AI analysis
+- **Image lightbox**: Click thumbnails to view full-size images, with lazy loading
 - **Web tools**: Real-time web search (DuckDuckGo) and URL fetching
 - Multiple conversations with history
 - Model selection (Gemini 3 Pro for complex tasks, Flash for speed)
 - Markdown rendering with syntax highlighting
 - Google Sign In authentication with email whitelist
 - Modern dark theme, mobile-first responsive design
+- iOS Safari and PWA compatible
 - Local development mode (no auth required)
 
 ## Tech Stack
@@ -57,6 +61,11 @@ LOCAL_MODE=true
 GOOGLE_CLIENT_ID=your-client-id
 JWT_SECRET_KEY=your-secret-key
 ALLOWED_EMAILS=user1@gmail.com,user2@gmail.com
+
+# File upload limits (optional)
+MAX_FILE_SIZE=20971520              # 20 MB in bytes
+MAX_FILES_PER_MESSAGE=10
+ALLOWED_FILE_TYPES=image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,application/json,text/csv
 ```
 
 ### Setting up Google Sign In

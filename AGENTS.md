@@ -24,6 +24,8 @@ src/
 │   └── tools.py        # Web tools (fetch_url, web_search)
 ├── db/
 │   └── models.py       # SQLite: User, Conversation, Message, AgentState
+├── utils/
+│   └── images.py       # Thumbnail generation (Pillow)
 └── static/
     ├── index.html
     ├── app.js          # Frontend state management, API calls
@@ -36,6 +38,7 @@ src/
 - [routes.py](src/api/routes.py) - API endpoints
 - [chat_agent.py](src/agent/chat_agent.py) - LangGraph graph, Gemini integration
 - [models.py](src/db/models.py) - Database schema and operations
+- [images.py](src/utils/images.py) - Thumbnail generation for uploaded images
 
 ## Gemini API Notes
 
@@ -74,7 +77,7 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - Conventional Commits: `type(scope): description`
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 - Run `make lint` before committing
-- **Bump `Config.VERSION`** in [config.py](src/config.py) before committing frontend changes (cache busting)
+- **Bump `Config.VERSION`** in [config.py](src/config.py) only when committing frontend changes (for cache busting). No need to bump during development - only before commit/push.
 - Frontend: ES modules, no build step
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
 

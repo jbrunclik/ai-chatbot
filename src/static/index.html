@@ -80,7 +80,17 @@
                             <!-- Model options will be populated by JS -->
                         </div>
                     </div>
+                    <div id="file-preview" class="file-preview hidden">
+                        <!-- File previews will be added here dynamically -->
+                    </div>
+                    <!-- Hidden file input (triggered by attach button) -->
+                    <input type="file" id="file-input" multiple>
                     <div class="input-container">
+                        <button id="attach-btn" class="btn-attach" title="Attach files">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                            </svg>
+                        </button>
                         <textarea
                             id="message-input"
                             placeholder="Type your message..."
@@ -106,6 +116,19 @@
                     <!-- Model options will be loaded here -->
                 </div>
                 <button id="close-modal-btn" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+
+        <!-- Image lightbox -->
+        <div id="lightbox" class="lightbox hidden">
+            <div class="lightbox-container">
+                <button class="lightbox-close" aria-label="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+                <img id="lightbox-img" src="" alt="Full size image">
             </div>
         </div>
 

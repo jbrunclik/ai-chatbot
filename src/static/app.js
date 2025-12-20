@@ -14,7 +14,14 @@ const state = {
     defaultModel: 'gemini-3-flash-preview',
     isLoading: false,
     googleClientId: null,
-    streamingEnabled: localStorage.getItem('streamingEnabled') !== 'false'  // Default: true
+    streamingEnabled: localStorage.getItem('streamingEnabled') !== 'false',  // Default: true
+    // File upload state
+    pendingFiles: [],
+    uploadConfig: {
+        maxFileSize: 20 * 1024 * 1024,  // 20 MB default
+        maxFilesPerMessage: 10,
+        allowedFileTypes: []
+    }
 };
 
 // DOM Elements
@@ -40,7 +47,15 @@ const elements = {
     currentModelName: document.getElementById('current-model-name'),
     modelDropdown: document.getElementById('model-dropdown'),
     // Streaming toggle
-    streamingToggle: document.getElementById('streaming-toggle')
+    streamingToggle: document.getElementById('streaming-toggle'),
+    // File upload
+    fileInput: document.getElementById('file-input'),
+    attachBtn: document.getElementById('attach-btn'),
+    filePreview: document.getElementById('file-preview'),
+    // Lightbox
+    lightbox: document.getElementById('lightbox'),
+    lightboxImg: document.getElementById('lightbox-img'),
+    lightboxClose: document.querySelector('.lightbox-close')
 };
 
 // API Functions
@@ -275,36 +290,56 @@ async function deleteConversationById(id) {
 // Chat Functions
 async function sendMessage() {
     const content = elements.messageInput.value.trim();
-    if (!content || state.isLoading) return;
+    const hasFiles = state.pendingFiles.length > 0;
+
+    if ((!content && !hasFiles) || state.isLoading) return;
 
     // Create conversation if none selected
     if (!state.currentConversation) {
         await createConversation();
     }
 
-    // Add user message to UI
-    addMessageToUI('user', content);
+    // Capture files before clearing
+    const filesToSend = [...state.pendingFiles];
+
+    // Add user message to UI (with file info)
+    addMessageToUI('user', content, filesToSend);
+
+    // Clear input and files
     elements.messageInput.value = '';
+    clearPendingFiles();
     autoResizeTextarea();
     updateSendButton();
 
     // Choose streaming or batch mode
     if (state.streamingEnabled) {
-        await sendMessageStream(content);
+        await sendMessageStream(content, filesToSend);
     } else {
-        await sendMessageBatch(content);
+        await sendMessageBatch(content, filesToSend);
     }
 }
 
-async function sendMessageBatch(content) {
+async function sendMessageBatch(content, files = []) {
     // Show loading indicator
     state.isLoading = true;
+    updateSendButton();
     const loadingEl = addLoadingIndicator();
 
     try {
+        // Build request body with optional files
+        const requestBody = { message: content };
+        if (files.length > 0) {
+            // Strip previewUrl before sending (not needed by backend)
+            requestBody.files = files.map(f => ({
+                name: f.name,
+                type: f.type,
+                data: f.data
+            }));
+        }
+
         const data = await api(`/api/conversations/${state.currentConversation.id}/chat/batch`, {
             method: 'POST',
-            body: JSON.stringify({ message: content })
+            body: JSON.stringify(requestBody)
         });
 
         // Remove loading indicator
@@ -322,11 +357,13 @@ async function sendMessageBatch(content) {
         console.error('Chat error:', error);
     } finally {
         state.isLoading = false;
+        updateSendButton();
     }
 }
 
-async function sendMessageStream(content) {
+async function sendMessageStream(content, files = []) {
     state.isLoading = true;
+    updateSendButton();
 
     // Create streaming message element
     const messageEl = addStreamingMessage();
@@ -334,13 +371,24 @@ async function sendMessageStream(content) {
     let fullResponse = '';
 
     try {
+        // Build request body with optional files
+        const requestBody = { message: content };
+        if (files.length > 0) {
+            // Strip previewUrl before sending (not needed by backend)
+            requestBody.files = files.map(f => ({
+                name: f.name,
+                type: f.type,
+                data: f.data
+            }));
+        }
+
         const response = await fetch(`/api/conversations/${state.currentConversation.id}/chat/stream`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': state.token ? `Bearer ${state.token}` : ''
             },
-            body: JSON.stringify({ message: content })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
@@ -480,7 +528,7 @@ function getUserAvatar() {
     return 'U';
 }
 
-function addMessageToUI(role, content) {
+function addMessageToUI(role, content, files = []) {
     // Remove welcome message if present
     const welcome = elements.messages.querySelector('.welcome-message');
     if (welcome) welcome.remove();
@@ -499,9 +547,18 @@ function addMessageToUI(role, content) {
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content';
 
+    // Handle structured content (from database)
+    let textContent = content;
+    let attachedFiles = files;
+
+    if (typeof content === 'object' && content !== null) {
+        textContent = content.text || '';
+        attachedFiles = content.files || [];
+    }
+
     if (role === 'assistant') {
         // Render markdown for assistant messages
-        contentEl.innerHTML = marked.parse(content, {
+        contentEl.innerHTML = marked.parse(textContent, {
             breaks: true,
             gfm: true,
             highlight: function(code, lang) {
@@ -516,7 +573,85 @@ function addMessageToUI(role, content) {
             hljs.highlightElement(block);
         });
     } else {
-        contentEl.textContent = content;
+        // User message - show text and file attachments
+        if (textContent) {
+            const textEl = document.createElement('div');
+            textEl.className = 'message-text';
+            textEl.textContent = textContent;
+            contentEl.appendChild(textEl);
+        }
+
+        // Render file attachments - separate images and files
+        if (attachedFiles && attachedFiles.length > 0) {
+            const images = attachedFiles.filter(f => f.type && f.type.startsWith('image/'));
+            const files = attachedFiles.filter(f => !f.type || !f.type.startsWith('image/'));
+
+            // Render images first (horizontal row)
+            if (images.length > 0) {
+                const imagesEl = document.createElement('div');
+                imagesEl.className = 'message-attachments-images';
+
+                for (const file of images) {
+                    const attachEl = document.createElement('div');
+                    attachEl.className = 'message-attachment';
+
+                    const img = document.createElement('img');
+                    // Prefer thumbnail, then previewUrl (for just-uploaded), then full data
+                    if (file.thumbnail) {
+                        img.src = `data:${file.type};base64,${file.thumbnail}`;
+                    } else if (file.previewUrl) {
+                        img.src = file.previewUrl;
+                    } else if (file.data) {
+                        img.src = `data:${file.type};base64,${file.data}`;
+                    }
+                    img.alt = file.name || 'Image';
+                    img.className = 'message-attachment-image';
+                    // Store message ID and file index for fetching full image from API
+                    if (file.messageId) {
+                        img.dataset.messageId = file.messageId;
+                        img.dataset.fileIndex = file.fileIndex;
+                    }
+                    attachEl.appendChild(img);
+                    imagesEl.appendChild(attachEl);
+                }
+
+                contentEl.appendChild(imagesEl);
+            }
+
+            // Render files second (vertical stack)
+            if (files.length > 0) {
+                const filesEl = document.createElement('div');
+                filesEl.className = 'message-attachments-files';
+
+                for (const file of files) {
+                    const attachEl = document.createElement('div');
+                    attachEl.className = 'message-attachment-file';
+
+                    // Add file type icon
+                    const iconEl = document.createElement('span');
+                    iconEl.className = 'file-icon';
+                    iconEl.innerHTML = getFileIconSvg(file.type);
+                    attachEl.appendChild(iconEl);
+
+                    // Add filename
+                    const nameEl = document.createElement('span');
+                    nameEl.className = 'file-name';
+                    nameEl.textContent = file.name || 'File';
+                    attachEl.appendChild(nameEl);
+
+                    // Store message ID and file index for download
+                    if (file.messageId !== undefined) {
+                        attachEl.dataset.messageId = file.messageId;
+                        attachEl.dataset.fileIndex = file.fileIndex;
+                        attachEl.dataset.fileName = file.name || 'file';
+                    }
+
+                    filesEl.appendChild(attachEl);
+                }
+
+                contentEl.appendChild(filesEl);
+            }
+        }
     }
 
     messageEl.appendChild(avatar);
@@ -607,7 +742,13 @@ function renderMessages() {
 
     elements.messages.innerHTML = '';
     state.currentConversation.messages.forEach(msg => {
-        addMessageToUI(msg.role, msg.content);
+        // Pass message ID with files for fetching full images from API
+        const filesWithMsgId = (msg.files || []).map((f, idx) => ({
+            ...f,
+            messageId: msg.id,
+            fileIndex: idx
+        }));
+        addMessageToUI(msg.role, msg.content, filesWithMsgId);
     });
 }
 
@@ -707,7 +848,9 @@ function autoResizeTextarea() {
 }
 
 function updateSendButton() {
-    elements.sendBtn.disabled = !elements.messageInput.value.trim() || state.isLoading;
+    const hasText = elements.messageInput.value.trim().length > 0;
+    const hasFiles = state.pendingFiles.length > 0;
+    elements.sendBtn.disabled = (!hasText && !hasFiles) || state.isLoading;
 }
 
 // Sidebar toggle (mobile)
@@ -752,6 +895,232 @@ function updateStreamingToggle() {
         elements.streamingToggle.checked = state.streamingEnabled;
     }
 }
+
+// File Upload Functions
+async function loadUploadConfig() {
+    try {
+        const data = await api('/api/config/upload');
+        state.uploadConfig = data;
+        // Set accept attribute on file input based on allowed types
+        if (elements.fileInput) {
+            elements.fileInput.accept = data.allowedFileTypes.join(',');
+        }
+    } catch (error) {
+        console.error('Failed to load upload config:', error);
+    }
+}
+
+function handleFileSelect(event) {
+    const files = Array.from(event.target.files);
+    addFilesToPending(files);
+    // Reset input so same file can be selected again
+    event.target.value = '';
+}
+
+function addFilesToPending(files) {
+    const { maxFileSize, maxFilesPerMessage, allowedFileTypes } = state.uploadConfig;
+
+    for (const file of files) {
+        // Check max files
+        if (state.pendingFiles.length >= maxFilesPerMessage) {
+            alert(`Maximum ${maxFilesPerMessage} files per message`);
+            break;
+        }
+
+        // Check file type
+        if (allowedFileTypes.length > 0 && !allowedFileTypes.includes(file.type)) {
+            alert(`File type "${file.type}" is not allowed`);
+            continue;
+        }
+
+        // Check file size
+        if (file.size > maxFileSize) {
+            const maxMB = Math.round(maxFileSize / (1024 * 1024));
+            alert(`File "${file.name}" exceeds ${maxMB}MB limit`);
+            continue;
+        }
+
+        // Read file as base64
+        readFileAsBase64(file);
+    }
+}
+
+function readFileAsBase64(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        // Extract base64 data (remove data:...;base64, prefix)
+        const base64 = e.target.result.split(',')[1];
+        state.pendingFiles.push({
+            name: file.name,
+            type: file.type,
+            data: base64,
+            // Keep original for preview
+            previewUrl: file.type.startsWith('image/') ? e.target.result : null
+        });
+        renderFilePreview();
+        updateSendButton();
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeFile(index) {
+    state.pendingFiles.splice(index, 1);
+    renderFilePreview();
+    updateSendButton();
+}
+
+function clearPendingFiles() {
+    state.pendingFiles = [];
+    renderFilePreview();
+    updateSendButton();
+}
+
+function renderFilePreview() {
+    if (!elements.filePreview) return;
+
+    if (state.pendingFiles.length === 0) {
+        elements.filePreview.classList.add('hidden');
+        elements.filePreview.innerHTML = '';
+        return;
+    }
+
+    elements.filePreview.classList.remove('hidden');
+    elements.filePreview.innerHTML = state.pendingFiles.map((file, index) => {
+        if (file.previewUrl) {
+            // Image preview
+            return `
+                <div class="file-preview-item" data-index="${index}">
+                    <img src="${file.previewUrl}" alt="${escapeHtml(file.name)}">
+                    <button class="file-preview-remove" data-remove-index="${index}">&times;</button>
+                </div>
+            `;
+        } else {
+            // Non-image file
+            return `
+                <div class="file-preview-item file-preview-doc" data-index="${index}">
+                    <span class="file-preview-name">${escapeHtml(file.name)}</span>
+                    <button class="file-preview-remove" data-remove-index="${index}">&times;</button>
+                </div>
+            `;
+        }
+    }).join('');
+}
+
+function getFileIcon(mimeType) {
+    if (mimeType === 'application/pdf') return '📄';
+    if (mimeType.startsWith('text/')) return '📝';
+    if (mimeType === 'application/json') return '{ }';
+    return '📎';
+}
+
+function getFileIconSvg(mimeType) {
+    // PDF icon
+    if (mimeType === 'application/pdf') {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15h.01M12 15h.01M15 15h.01"/></svg>';
+    }
+    // Text/code files
+    if (mimeType?.startsWith('text/') || mimeType === 'application/json' || mimeType === 'application/javascript') {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg>';
+    }
+    // Default file icon
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+}
+
+// Lightbox Functions
+function openLightbox(imageSrc) {
+    if (elements.lightbox && elements.lightboxImg) {
+        elements.lightboxImg.src = imageSrc;
+        elements.lightbox.classList.remove('hidden');
+        elements.lightbox.classList.remove('loading');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+async function openLightboxWithLoading(apiUrl) {
+    if (!elements.lightbox || !elements.lightboxImg) return;
+
+    // Show lightbox with loading state
+    elements.lightbox.classList.remove('hidden');
+    elements.lightbox.classList.add('loading');
+    elements.lightboxImg.src = '';
+    document.body.style.overflow = 'hidden';
+
+    try {
+        // Fetch full-size image from API with auth header
+        const response = await fetch(apiUrl, {
+            headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {}
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to load image');
+        }
+
+        // Create blob URL from response
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Display the image
+        elements.lightboxImg.src = blobUrl;
+        elements.lightbox.classList.remove('loading');
+
+        // Clean up blob URL when lightbox closes
+        elements.lightboxImg.dataset.blobUrl = blobUrl;
+    } catch (error) {
+        console.error('Failed to load full-size image:', error);
+        closeLightbox();
+    }
+}
+
+function closeLightbox() {
+    if (elements.lightbox) {
+        elements.lightbox.classList.add('hidden');
+        elements.lightbox.classList.remove('loading');
+
+        // Clean up blob URL if present
+        const blobUrl = elements.lightboxImg.dataset.blobUrl;
+        if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+            delete elements.lightboxImg.dataset.blobUrl;
+        }
+
+        elements.lightboxImg.src = '';
+        document.body.style.overflow = '';
+    }
+}
+
+// File Download Functions
+async function downloadFile(messageId, fileIndex, fileName) {
+    try {
+        const apiUrl = `/api/messages/${messageId}/files/${fileIndex}`;
+        const response = await fetch(apiUrl, {
+            headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {}
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to download file');
+        }
+
+        // Create blob and trigger download
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Clean up blob URL
+        URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+        console.error('Failed to download file:', error);
+        alert('Failed to download file');
+    }
+}
+
+// Make removeFile available globally
+window.removeFile = removeFile;
 
 // Event Listeners
 function setupEventListeners() {
@@ -804,6 +1173,27 @@ function setupEventListeners() {
         elements.streamingToggle.addEventListener('change', toggleStreaming);
     }
 
+    // File upload
+    if (elements.attachBtn) {
+        elements.attachBtn.addEventListener('click', () => {
+            elements.fileInput?.click();
+        });
+    }
+    if (elements.fileInput) {
+        elements.fileInput.addEventListener('change', handleFileSelect);
+    }
+
+    // File preview remove buttons (event delegation for iOS compatibility)
+    if (elements.filePreview) {
+        elements.filePreview.addEventListener('click', (e) => {
+            const removeBtn = e.target.closest('[data-remove-index]');
+            if (removeBtn) {
+                const index = parseInt(removeBtn.dataset.removeIndex, 10);
+                removeFile(index);
+            }
+        });
+    }
+
     // Conversation list event delegation (for iOS Safari compatibility)
     // Use both click and touchend for responsive single-tap on mobile
     const handleConversationInteraction = (e) => {
@@ -843,6 +1233,55 @@ function setupEventListeners() {
             handleConversationInteraction(e);
         }
     });
+
+    // Lightbox - click on message images to open fullscreen
+    // File download - click on file chips to download
+    elements.messages.addEventListener('click', async (e) => {
+        // Handle image clicks - open in lightbox
+        const img = e.target.closest('.message-attachment-image');
+        if (img) {
+            // If we have message ID and file index, fetch full-size from API
+            const messageId = img.dataset.messageId;
+            const fileIndex = img.dataset.fileIndex;
+
+            if (messageId && fileIndex !== undefined) {
+                // Fetch full-size image from API
+                const apiUrl = `/api/messages/${messageId}/files/${fileIndex}`;
+                openLightboxWithLoading(apiUrl);
+            } else {
+                // Fallback: use current src (for just-uploaded images)
+                openLightbox(img.src);
+            }
+            return;
+        }
+
+        // Handle file chip clicks - download file
+        const fileChip = e.target.closest('.message-attachment-file');
+        if (fileChip && fileChip.dataset.messageId) {
+            const { messageId, fileIndex, fileName } = fileChip.dataset;
+            downloadFile(messageId, fileIndex, fileName);
+        }
+    });
+
+    // Lightbox close handlers
+    if (elements.lightbox) {
+        elements.lightbox.addEventListener('click', (e) => {
+            // Close when clicking on background, not on the image
+            if (e.target === elements.lightbox) {
+                closeLightbox();
+            }
+        });
+    }
+    if (elements.lightboxClose) {
+        elements.lightboxClose.addEventListener('click', closeLightbox);
+    }
+
+    // Close lightbox with Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !elements.lightbox?.classList.contains('hidden')) {
+            closeLightbox();
+        }
+    });
 }
 
 // Make functions available globally for onclick handlers
@@ -868,7 +1307,8 @@ async function init() {
     // Load data
     await Promise.all([
         loadConversations(),
-        loadModels()
+        loadModels(),
+        loadUploadConfig()
     ]);
 }
 

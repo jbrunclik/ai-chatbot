@@ -222,10 +222,76 @@ class ChatAgent:
         self.with_tools = with_tools
         self.graph = create_chat_graph(model_name, with_tools=with_tools).compile()
 
+    def _build_message_content(
+        self, text: str, files: list[dict[str, Any]] | None = None
+    ) -> str | list[str | dict[Any, Any]]:
+        """Build message content for LangChain.
+
+        Args:
+            text: Plain text message
+            files: Optional list of file attachments
+
+        Returns:
+            For text-only: the string
+            For multimodal: list of content blocks for LangChain
+        """
+        if not files:
+            return text
+
+        # Build multimodal content blocks
+        blocks: list[str | dict[Any, Any]] = []
+
+        # Add text block if present
+        if text:
+            blocks.append({"type": "text", "text": text})
+
+        # Add file blocks
+        for file in files:
+            mime_type = file.get("type", "application/octet-stream")
+            data = file.get("data", "")
+
+            if mime_type.startswith("image/"):
+                # Image block for Gemini
+                blocks.append(
+                    {
+                        "type": "image",
+                        "base64": data,
+                        "mime_type": mime_type,
+                    }
+                )
+            elif mime_type == "application/pdf":
+                # PDF - Gemini supports inline PDFs
+                blocks.append(
+                    {
+                        "type": "image",  # LangChain uses image type for PDFs too
+                        "base64": data,
+                        "mime_type": mime_type,
+                    }
+                )
+            else:
+                # Text files - include as text block
+                try:
+                    import base64
+
+                    decoded = base64.b64decode(data).decode("utf-8")
+                    file_name = file.get("name", "file")
+                    blocks.append(
+                        {
+                            "type": "text",
+                            "text": f"\n--- Content of {file_name} ---\n{decoded}\n--- End of {file_name} ---\n",
+                        }
+                    )
+                except Exception:
+                    # If decoding fails, skip the file
+                    pass
+
+        return blocks if blocks else text
+
     def _build_messages(
         self,
-        user_message: str,
-        history: list[dict[str, str]] | None = None,
+        text: str,
+        files: list[dict[str, Any]] | None = None,
+        history: list[dict[str, Any]] | None = None,
     ) -> list[BaseMessage]:
         """Build the messages list from history and user message."""
         messages: list[BaseMessage] = []
@@ -236,12 +302,15 @@ class ChatAgent:
         if history:
             for msg in history:
                 if msg["role"] == "user":
-                    messages.append(HumanMessage(content=msg["content"]))
+                    content = self._build_message_content(msg["content"], msg.get("files"))
+                    messages.append(HumanMessage(content=content))
                 elif msg["role"] == "assistant":
+                    # Assistant messages are always text
                     messages.append(AIMessage(content=msg["content"]))
 
         # Add the current user message
-        messages.append(HumanMessage(content=user_message))
+        content = self._build_message_content(text, files)
+        messages.append(HumanMessage(content=content))
 
         return messages
 
@@ -279,20 +348,22 @@ class ChatAgent:
 
     def stream_chat(
         self,
-        user_message: str,
-        history: list[dict[str, str]] | None = None,
+        text: str,
+        files: list[dict[str, Any]] | None = None,
+        history: list[dict[str, Any]] | None = None,
     ) -> Generator[str, None, None]:
         """
         Stream response tokens using LangGraph's stream method.
 
         Args:
-            user_message: The user's message
-            history: Optional list of previous messages with 'role' and 'content' keys
+            text: The user's message text
+            files: Optional list of file attachments
+            history: Optional list of previous messages with 'role', 'content', and 'files' keys
 
         Yields:
             Text tokens as they are generated
         """
-        messages = self._build_messages(user_message, history)
+        messages = self._build_messages(text, files, history)
 
         # Stream the graph execution with messages mode for token-level streaming
         for event in self.graph.stream(
@@ -314,14 +385,16 @@ class ChatAgent:
 
     def chat_with_state(
         self,
-        user_message: str,
+        text: str,
+        files: list[dict[str, Any]] | None = None,
         previous_state: dict[str, Any] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """
         Chat with persistent state for multi-turn agent workflows.
 
         Args:
-            user_message: The user's message
+            text: The user's message text
+            files: Optional list of file attachments
             previous_state: Optional previous agent state
 
         Returns:
@@ -347,8 +420,9 @@ class ChatAgent:
                         )
                     )
 
-        # Add the current user message
-        messages.append(HumanMessage(content=user_message))
+        # Add the current user message (with multimodal support)
+        content = self._build_message_content(text, files)
+        messages.append(HumanMessage(content=content))
 
         # Run the graph
         result = self.graph.invoke(cast(Any, {"messages": messages}))
