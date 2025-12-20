@@ -2,7 +2,7 @@ from typing import Any
 
 from flask import Blueprint, request
 
-from src.agent.chat_agent import ChatAgent
+from src.agent.chat_agent import ChatAgent, generate_title
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
@@ -239,8 +239,7 @@ def chat(conv_id: str) -> tuple[dict[str, str], int]:
 
     # Auto-generate title from first message if still default
     if conv.title == "New Conversation":
-        # Use first ~50 chars of user message as title
-        new_title = message[:50] + ("..." if len(message) > 50 else "")
+        new_title = generate_title(message, response)
         db.update_conversation(conv_id, user.id, title=new_title)
 
     return {
