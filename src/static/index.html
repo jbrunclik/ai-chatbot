@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Chatbot</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <!-- Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Syntax highlighting for code blocks -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h1>AI Chatbot</h1>
+                <button id="new-chat-btn" class="btn btn-primary">+ New Chat</button>
+            </div>
+            <div id="conversations-list" class="conversations-list">
+                <!-- Conversations will be loaded here -->
+            </div>
+            <div class="sidebar-footer">
+                <div id="user-info" class="user-info">
+                    <!-- User info will be loaded here -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main chat area -->
+        <main class="main">
+            <!-- Mobile header -->
+            <header class="mobile-header">
+                <button id="menu-btn" class="btn-icon">☰</button>
+                <span id="current-chat-title">AI Chatbot</span>
+                <button id="model-btn" class="btn-icon">⚙</button>
+            </header>
+
+            <!-- Chat messages -->
+            <div id="messages" class="messages">
+                <div class="welcome-message">
+                    <h2>Welcome to AI Chatbot</h2>
+                    <p>Start a conversation with Gemini AI</p>
+                </div>
+            </div>
+
+            <!-- Input area -->
+            <div class="input-area">
+                <div class="input-wrapper">
+                    <div class="model-selector">
+                        <button id="model-selector-btn" class="model-selector-btn">
+                            <span id="current-model-name">Gemini 3 Flash</span>
+                            <span class="dropdown-arrow">▼</span>
+                        </button>
+                        <div id="model-dropdown" class="model-dropdown hidden">
+                            <!-- Model options will be populated by JS -->
+                        </div>
+                    </div>
+                    <div class="input-container">
+                        <textarea
+                            id="message-input"
+                            placeholder="Type your message..."
+                            rows="1"
+                            autofocus
+                        ></textarea>
+                        <button id="send-btn" class="btn btn-send" disabled>
+                            <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Model selector modal -->
+        <div id="model-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Select Model</h3>
+                <div id="model-options" class="model-options">
+                    <!-- Model options will be loaded here -->
+                </div>
+                <button id="close-modal-btn" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+
+        <!-- Login overlay -->
+        <div id="login-overlay" class="login-overlay hidden">
+            <div class="login-box">
+                <h2>AI Chatbot</h2>
+                <p>Sign in to continue</p>
+                <button id="google-login-btn" class="btn btn-google">
+                    Sign in with Google
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>
