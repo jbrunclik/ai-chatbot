@@ -90,7 +90,30 @@ async function initGoogleSignIn() {
         state.googleClientId = data.client_id;
 
         if (!state.googleClientId) {
-            console.error('Google Client ID not configured');
+            // No client ID means local mode - skip Google Sign In
+            return;
+        }
+
+        // Wait for Google Identity Services to load
+        if (typeof google === 'undefined') {
+            // GIS not loaded yet, wait for it
+            await new Promise((resolve) => {
+                const checkGoogle = setInterval(() => {
+                    if (typeof google !== 'undefined') {
+                        clearInterval(checkGoogle);
+                        resolve();
+                    }
+                }, 100);
+                // Timeout after 5 seconds
+                setTimeout(() => {
+                    clearInterval(checkGoogle);
+                    resolve();
+                }, 5000);
+            });
+        }
+
+        if (typeof google === 'undefined') {
+            console.error('Google Identity Services failed to load');
             return;
         }
 
@@ -429,7 +452,14 @@ function renderUserInfo() {
     elements.userInfo.innerHTML = `
         ${state.user.picture ? `<img src="${state.user.picture}" class="user-avatar" alt="Avatar" referrerpolicy="no-referrer">` : '<div class="user-avatar"></div>'}
         <span class="user-name">${escapeHtml(state.user.name)}</span>
+        <button class="btn-logout" title="Sign out">↪</button>
     `;
+
+    // Add logout handler
+    const logoutBtn = elements.userInfo.querySelector('.btn-logout');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', logout);
+    }
 }
 
 function renderModelOptions() {
