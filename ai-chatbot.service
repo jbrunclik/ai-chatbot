@@ -1,0 +1,27 @@
+# Systemd user service for AI Chatbot
+# Install to: ~/.config/systemd/user/ai-chatbot.service
+# Enable with: systemctl --user enable ai-chatbot
+# Start with: systemctl --user start ai-chatbot
+# View logs: journalctl --user -u ai-chatbot -f
+
+[Unit]
+Description=AI Chatbot - Personal Gemini-powered assistant
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/ai-chatbot
+ExecStart=%h/src/ai-chatbot/.venv/bin/python -m src.app
+Restart=on-failure
+RestartSec=5
+Environment=PATH=%h/src/ai-chatbot/.venv/bin:/usr/local/bin:/usr/bin:/bin
+
+# Load environment from .env file
+EnvironmentFile=%h/src/ai-chatbot/.env
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

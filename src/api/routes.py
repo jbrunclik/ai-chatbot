@@ -1,0 +1,279 @@
+from typing import Any
+
+from flask import Blueprint, request, url_for
+
+from src.agent.chat_agent import ChatAgent
+from src.auth.google_oauth import (
+    GoogleOAuthError,
+    exchange_code_for_tokens,
+    get_authorization_url,
+    get_user_info,
+    is_email_allowed,
+)
+from src.auth.jwt_auth import create_token, get_current_user, require_auth
+from src.config import Config
+from src.db.models import db
+
+api = Blueprint("api", __name__, url_prefix="/api")
+auth = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+# ============================================================================
+# Auth Routes
+# ============================================================================
+
+
+@auth.route("/login")
+def login() -> tuple[dict[str, str], int] | dict[str, str]:
+    """Redirect to Google OAuth login."""
+    if Config.LOCAL_MODE:
+        return {"error": "Authentication disabled in local mode"}, 400
+
+    redirect_uri = url_for("auth.callback", _external=True)
+    auth_url = get_authorization_url(redirect_uri)
+    return {"auth_url": auth_url}
+
+
+@auth.route("/callback")
+def callback() -> tuple[dict[str, Any], int] | dict[str, Any]:
+    """Handle Google OAuth callback."""
+    if Config.LOCAL_MODE:
+        return {"error": "Authentication disabled in local mode"}, 400
+
+    code = request.args.get("code")
+    if not code:
+        return {"error": "Missing authorization code"}, 400
+
+    try:
+        redirect_uri = url_for("auth.callback", _external=True)
+        tokens = exchange_code_for_tokens(code, redirect_uri)
+        user_info = get_user_info(tokens["access_token"])
+    except GoogleOAuthError as e:
+        return {"error": str(e)}, 400
+
+    email = user_info.get("email", "")
+    if not is_email_allowed(email):
+        return {"error": "Email not authorized"}, 403
+
+    # Create or get user
+    user = db.get_or_create_user(
+        email=email,
+        name=user_info.get("name", email),
+        picture=user_info.get("picture"),
+    )
+
+    # Generate JWT token
+    token = create_token(user)
+
+    return {
+        "token": token,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "picture": user.picture,
+        },
+    }
+
+
+@auth.route("/me")
+@require_auth
+def me() -> dict[str, dict[str, str | None]]:
+    """Get current user info."""
+    user = get_current_user()
+    if not user:
+        return {"user": {}}
+
+    return {
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "picture": user.picture,
+        }
+    }
+
+
+# ============================================================================
+# Conversation Routes
+# ============================================================================
+
+
+@api.route("/conversations", methods=["GET"])
+@require_auth
+def list_conversations() -> dict[str, list[dict[str, str]]]:
+    """List all conversations for the current user."""
+    user = get_current_user()
+    if not user:
+        return {"conversations": []}
+
+    conversations = db.list_conversations(user.id)
+    return {
+        "conversations": [
+            {
+                "id": c.id,
+                "title": c.title,
+                "model": c.model,
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat(),
+            }
+            for c in conversations
+        ]
+    }
+
+
+@api.route("/conversations", methods=["POST"])
+@require_auth
+def create_conversation() -> tuple[dict[str, str], int]:
+    """Create a new conversation."""
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    data = request.get_json() or {}
+    model = data.get("model", Config.DEFAULT_MODEL)
+
+    if model not in Config.MODELS:
+        return {"error": f"Invalid model. Choose from: {list(Config.MODELS.keys())}"}, 400
+
+    conv = db.create_conversation(user.id, model=model)
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "model": conv.model,
+        "created_at": conv.created_at.isoformat(),
+        "updated_at": conv.updated_at.isoformat(),
+    }, 201
+
+
+@api.route("/conversations/<conv_id>", methods=["GET"])
+@require_auth
+def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
+    """Get a conversation with its messages."""
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    conv = db.get_conversation(conv_id, user.id)
+    if not conv:
+        return {"error": "Conversation not found"}, 404
+
+    messages = db.get_messages(conv_id)
+    return {
+        "id": conv.id,
+        "title": conv.title,
+        "model": conv.model,
+        "created_at": conv.created_at.isoformat(),
+        "updated_at": conv.updated_at.isoformat(),
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in messages
+        ],
+    }, 200
+
+
+@api.route("/conversations/<conv_id>", methods=["PATCH"])
+@require_auth
+def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
+    """Update a conversation (title, model)."""
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    data = request.get_json() or {}
+    title = data.get("title")
+    model = data.get("model")
+
+    if model and model not in Config.MODELS:
+        return {"error": f"Invalid model. Choose from: {list(Config.MODELS.keys())}"}, 400
+
+    if not db.update_conversation(conv_id, user.id, title=title, model=model):
+        return {"error": "Conversation not found"}, 404
+
+    return {"status": "updated"}, 200
+
+
+@api.route("/conversations/<conv_id>", methods=["DELETE"])
+@require_auth
+def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
+    """Delete a conversation."""
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    if not db.delete_conversation(conv_id, user.id):
+        return {"error": "Conversation not found"}, 404
+
+    return {"status": "deleted"}, 200
+
+
+# ============================================================================
+# Chat Routes
+# ============================================================================
+
+
+@api.route("/conversations/<conv_id>/chat", methods=["POST"])
+@require_auth
+def chat(conv_id: str) -> tuple[dict[str, str], int]:
+    """Send a message and get a response."""
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    conv = db.get_conversation(conv_id, user.id)
+    if not conv:
+        return {"error": "Conversation not found"}, 404
+
+    data = request.get_json() or {}
+    message = data.get("message", "").strip()
+    if not message:
+        return {"error": "Message is required"}, 400
+
+    # Save user message
+    db.add_message(conv_id, "user", message)
+
+    # Get previous agent state
+    previous_state = db.get_agent_state(conv_id)
+
+    # Create agent and get response
+    agent = ChatAgent(model_name=conv.model)
+    response, new_state = agent.chat_with_state(message, previous_state)
+
+    # Save response and state
+    assistant_msg = db.add_message(conv_id, "assistant", response)
+    db.save_agent_state(conv_id, new_state)
+
+    # Auto-generate title from first message if still default
+    if conv.title == "New Conversation":
+        # Use first ~50 chars of user message as title
+        new_title = message[:50] + ("..." if len(message) > 50 else "")
+        db.update_conversation(conv_id, user.id, title=new_title)
+
+    return {
+        "id": assistant_msg.id,
+        "role": "assistant",
+        "content": response,
+        "created_at": assistant_msg.created_at.isoformat(),
+    }, 200
+
+
+# ============================================================================
+# Models Routes
+# ============================================================================
+
+
+@api.route("/models", methods=["GET"])
+@require_auth
+def list_models() -> dict[str, Any]:
+    """List available models."""
+    return {
+        "models": [
+            {"id": model_id, "name": model_name} for model_id, model_name in Config.MODELS.items()
+        ],
+        "default": Config.DEFAULT_MODEL,
+    }

@@ -1,0 +1,323 @@
+import json
+import sqlite3
+import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from src.config import Config
+
+
+@dataclass
+class User:
+    id: str
+    email: str
+    name: str
+    picture: str | None
+    created_at: datetime
+
+
+@dataclass
+class Conversation:
+    id: str
+    user_id: str
+    title: str
+    model: str
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass
+class Message:
+    id: str
+    conversation_id: str
+    role: str  # "user" or "assistant"
+    content: str
+    created_at: datetime
+
+
+@dataclass
+class AgentState:
+    conversation_id: str
+    state_json: str
+    updated_at: datetime
+
+
+class Database:
+    def __init__(self, db_path: Path | None = None) -> None:
+        self.db_path = db_path or Config.DATABASE_PATH
+        self._init_db()
+
+    @contextmanager
+    def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _init_db(self) -> None:
+        with self._get_conn() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    picture TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_states (
+                    conversation_id TEXT PRIMARY KEY,
+                    state_json TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
+                CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
+            """)
+            conn.commit()
+
+    # User operations
+    def get_or_create_user(self, email: str, name: str, picture: str | None = None) -> User:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+
+            if row:
+                return User(
+                    id=row["id"],
+                    email=row["email"],
+                    name=row["name"],
+                    picture=row["picture"],
+                    created_at=datetime.fromisoformat(row["created_at"]),
+                )
+
+            user_id = str(uuid.uuid4())
+            conn.execute(
+                "INSERT INTO users (id, email, name, picture) VALUES (?, ?, ?, ?)",
+                (user_id, email, name, picture),
+            )
+            conn.commit()
+
+            return User(
+                id=user_id,
+                email=email,
+                name=name,
+                picture=picture,
+                created_at=datetime.now(),
+            )
+
+    def get_user_by_id(self, user_id: str) -> User | None:
+        with self._get_conn() as conn:
+            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+
+            if not row:
+                return None
+
+            return User(
+                id=row["id"],
+                email=row["email"],
+                name=row["name"],
+                picture=row["picture"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+            )
+
+    # Conversation operations
+    def create_conversation(
+        self, user_id: str, title: str = "New Conversation", model: str | None = None
+    ) -> Conversation:
+        conv_id = str(uuid.uuid4())
+        model = model or Config.DEFAULT_MODEL
+        now = datetime.now()
+
+        with self._get_conn() as conn:
+            conn.execute(
+                """INSERT INTO conversations (id, user_id, title, model, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (conv_id, user_id, title, model, now.isoformat(), now.isoformat()),
+            )
+            conn.commit()
+
+        return Conversation(
+            id=conv_id,
+            user_id=user_id,
+            title=title,
+            model=model,
+            created_at=now,
+            updated_at=now,
+        )
+
+    def get_conversation(self, conv_id: str, user_id: str) -> Conversation | None:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM conversations WHERE id = ? AND user_id = ?",
+                (conv_id, user_id),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            return Conversation(
+                id=row["id"],
+                user_id=row["user_id"],
+                title=row["title"],
+                model=row["model"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                updated_at=datetime.fromisoformat(row["updated_at"]),
+            )
+
+    def list_conversations(self, user_id: str) -> list[Conversation]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """SELECT * FROM conversations WHERE user_id = ?
+                   ORDER BY updated_at DESC""",
+                (user_id,),
+            ).fetchall()
+
+            return [
+                Conversation(
+                    id=row["id"],
+                    user_id=row["user_id"],
+                    title=row["title"],
+                    model=row["model"],
+                    created_at=datetime.fromisoformat(row["created_at"]),
+                    updated_at=datetime.fromisoformat(row["updated_at"]),
+                )
+                for row in rows
+            ]
+
+    def update_conversation(
+        self, conv_id: str, user_id: str, title: str | None = None, model: str | None = None
+    ) -> bool:
+        updates: list[str] = ["updated_at = ?"]
+        params: list[Any] = [datetime.now().isoformat()]
+
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title)
+        if model is not None:
+            updates.append("model = ?")
+            params.append(model)
+
+        params.extend([conv_id, user_id])
+
+        with self._get_conn() as conn:
+            cursor = conn.execute(
+                f"UPDATE conversations SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+                params,
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_conversation(self, conv_id: str, user_id: str) -> bool:
+        with self._get_conn() as conn:
+            # Delete messages first
+            conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
+            # Delete agent state
+            conn.execute("DELETE FROM agent_states WHERE conversation_id = ?", (conv_id,))
+            # Delete conversation
+            cursor = conn.execute(
+                "DELETE FROM conversations WHERE id = ? AND user_id = ?",
+                (conv_id, user_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    # Message operations
+    def add_message(self, conversation_id: str, role: str, content: str) -> Message:
+        msg_id = str(uuid.uuid4())
+        now = datetime.now()
+
+        with self._get_conn() as conn:
+            conn.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+                (msg_id, conversation_id, role, content, now.isoformat()),
+            )
+            # Update conversation's updated_at
+            conn.execute(
+                "UPDATE conversations SET updated_at = ? WHERE id = ?",
+                (now.isoformat(), conversation_id),
+            )
+            conn.commit()
+
+        return Message(
+            id=msg_id,
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            created_at=now,
+        )
+
+    def get_messages(self, conversation_id: str) -> list[Message]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at",
+                (conversation_id,),
+            ).fetchall()
+
+            return [
+                Message(
+                    id=row["id"],
+                    conversation_id=row["conversation_id"],
+                    role=row["role"],
+                    content=row["content"],
+                    created_at=datetime.fromisoformat(row["created_at"]),
+                )
+                for row in rows
+            ]
+
+    # Agent state operations
+    def save_agent_state(self, conversation_id: str, state: dict[str, Any]) -> None:
+        state_json = json.dumps(state)
+        now = datetime.now().isoformat()
+
+        with self._get_conn() as conn:
+            conn.execute(
+                """INSERT INTO agent_states (conversation_id, state_json, updated_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(conversation_id) DO UPDATE SET
+                   state_json = excluded.state_json,
+                   updated_at = excluded.updated_at""",
+                (conversation_id, state_json, now),
+            )
+            conn.commit()
+
+    def get_agent_state(self, conversation_id: str) -> dict[str, Any] | None:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT state_json FROM agent_states WHERE conversation_id = ?",
+                (conversation_id,),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            return json.loads(row["state_json"])  # type: ignore[no-any-return]
+
+
+# Global database instance
+db = Database()
