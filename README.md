@@ -14,6 +14,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - Markdown rendering with syntax highlighting
 - Google Sign In authentication with email whitelist
 - Modern dark theme, mobile-first responsive design
+- **Touch gestures**: Swipe left on conversations to delete, swipe from left edge to open sidebar
 - iOS Safari and PWA compatible
 - Local development mode (no auth required)
 

@@ -34,10 +34,6 @@ const elements = {
     sendBtn: document.getElementById('send-btn'),
     newChatBtn: document.getElementById('new-chat-btn'),
     menuBtn: document.getElementById('menu-btn'),
-    modelBtn: document.getElementById('model-btn'),
-    modelModal: document.getElementById('model-modal'),
-    modelOptions: document.getElementById('model-options'),
-    closeModalBtn: document.getElementById('close-modal-btn'),
     loginOverlay: document.getElementById('login-overlay'),
     googleLoginBtn: document.getElementById('google-login-btn'),
     userInfo: document.getElementById('user-info'),
@@ -698,7 +694,6 @@ async function loadModels() {
         const data = await api('/api/models');
         state.models = data.models;
         state.defaultModel = data.default;
-        renderModelOptions();
         renderModelDropdown();
         updateCurrentModelDisplay();
     } catch (error) {
@@ -721,20 +716,20 @@ async function selectModel(modelId) {
         }
     }
 
-    renderModelOptions();
     renderModelDropdown();
     updateCurrentModelDisplay();
-    closeModelModal();
     closeModelDropdown();
 }
 
 // Render Functions
 function renderConversationsList() {
     elements.conversationsList.innerHTML = state.conversations.map(conv => `
-        <div class="conversation-item ${conv.id === state.currentConversation?.id ? 'active' : ''}"
-             data-conv-id="${conv.id}">
-            <span class="conversation-title">${escapeHtml(conv.title)}</span>
-            <button class="conversation-delete" data-delete-id="${conv.id}">×</button>
+        <div class="conversation-item-wrapper" data-conv-id="${conv.id}">
+            <div class="conversation-item ${conv.id === state.currentConversation?.id ? 'active' : ''}">
+                <span class="conversation-title">${escapeHtml(conv.title)}</span>
+                <button class="conversation-delete" data-delete-id="${conv.id}">×</button>
+            </div>
+            <button class="conversation-delete-swipe" data-delete-id="${conv.id}">Delete</button>
         </div>
     `).join('');
 }
@@ -781,18 +776,6 @@ function renderUserInfo() {
     if (logoutBtn) {
         logoutBtn.addEventListener('click', logout);
     }
-}
-
-function renderModelOptions() {
-    const currentModel = state.currentConversation?.model || state.defaultModel;
-
-    elements.modelOptions.innerHTML = state.models.map(model => `
-        <div class="model-option ${model.id === currentModel ? 'selected' : ''}"
-             onclick="selectModel('${model.id}')">
-            <div class="model-option-name">${escapeHtml(model.name)}</div>
-            <div class="model-option-id">${model.id}</div>
-        </div>
-    `).join('');
 }
 
 function renderModelDropdown() {
@@ -870,22 +853,24 @@ function toggleSidebar() {
         overlay.onclick = closeSidebar;
         elements.app.appendChild(overlay);
     }
-    overlay.classList.toggle('visible', elements.sidebar.classList.contains('open'));
+    const isOpen = elements.sidebar.classList.contains('open');
+    overlay.classList.toggle('visible', isOpen);
+    // Clear inline styles to let CSS classes control visibility
+    if (!isOpen) {
+        overlay.style.display = '';
+        overlay.style.opacity = '';
+    }
 }
 
 function closeSidebar() {
     elements.sidebar.classList.remove('open');
     const overlay = document.querySelector('.sidebar-overlay');
-    if (overlay) overlay.classList.remove('visible');
-}
-
-// Modal functions
-function openModelModal() {
-    elements.modelModal.classList.remove('hidden');
-}
-
-function closeModelModal() {
-    elements.modelModal.classList.add('hidden');
+    if (overlay) {
+        overlay.classList.remove('visible');
+        // Clear any inline styles that might have been set during swipe
+        overlay.style.display = '';
+        overlay.style.opacity = '';
+    }
 }
 
 // Streaming toggle
@@ -989,6 +974,8 @@ function renderFilePreview() {
         return;
     }
 
+    const closeSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+
     elements.filePreview.classList.remove('hidden');
     elements.filePreview.innerHTML = state.pendingFiles.map((file, index) => {
         if (file.previewUrl) {
@@ -996,7 +983,7 @@ function renderFilePreview() {
             return `
                 <div class="file-preview-item" data-index="${index}">
                     <img src="${file.previewUrl}" alt="${escapeHtml(file.name)}">
-                    <button class="file-preview-remove" data-remove-index="${index}">&times;</button>
+                    <button class="file-preview-remove" data-remove-index="${index}">${closeSvg}</button>
                 </div>
             `;
         } else {
@@ -1004,7 +991,7 @@ function renderFilePreview() {
             return `
                 <div class="file-preview-item file-preview-doc" data-index="${index}">
                     <span class="file-preview-name">${escapeHtml(file.name)}</span>
-                    <button class="file-preview-remove" data-remove-index="${index}">&times;</button>
+                    <button class="file-preview-remove" data-remove-index="${index}">${closeSvg}</button>
                 </div>
             `;
         }
@@ -1150,13 +1137,6 @@ function setupEventListeners() {
     // Mobile menu
     elements.menuBtn.addEventListener('click', toggleSidebar);
 
-    // Model selector (mobile modal)
-    elements.modelBtn.addEventListener('click', openModelModal);
-    elements.closeModalBtn.addEventListener('click', closeModelModal);
-    elements.modelModal.addEventListener('click', (e) => {
-        if (e.target === elements.modelModal) closeModelModal();
-    });
-
     // Model selector dropdown (desktop)
     elements.modelSelectorBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1188,6 +1168,33 @@ function setupEventListeners() {
         elements.fileInput.addEventListener('change', handleFileSelect);
     }
 
+    // Drag and drop file upload
+    const dropZone = document.querySelector('.input-area');
+    if (dropZone) {
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('drag-over');
+
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) {
+                addFilesToPending(files);
+            }
+        });
+    }
+
     // File preview remove buttons (event delegation for iOS compatibility)
     if (elements.filePreview) {
         elements.filePreview.addEventListener('click', (e) => {
@@ -1200,13 +1207,14 @@ function setupEventListeners() {
     }
 
     // Conversation list event delegation (for iOS Safari compatibility)
-    // Use both click and touchend for responsive single-tap on mobile
     const handleConversationInteraction = (e) => {
-        // Handle delete button
+        // Handle delete button (both regular and swipe)
         const deleteBtn = e.target.closest('[data-delete-id]');
         if (deleteBtn) {
             e.stopPropagation();
             e.preventDefault();
+            // Close any open swipes before showing delete confirmation
+            resetSwipeStates();
             const id = deleteBtn.dataset.deleteId;
             if (confirm('Delete this conversation?')) {
                 deleteConversationById(id);
@@ -1214,30 +1222,302 @@ function setupEventListeners() {
             return;
         }
 
-        // Handle conversation selection
-        const convItem = e.target.closest('[data-conv-id]');
+        // Handle conversation selection (only on the conversation-item, not wrapper)
+        const convItem = e.target.closest('.conversation-item');
         if (convItem) {
             e.preventDefault();
-            const id = convItem.dataset.convId;
-            selectConversation(id);
+            const wrapper = convItem.closest('[data-conv-id]');
+            if (wrapper) {
+                // Reset any open swipe states first
+                resetSwipeStates();
+                const id = wrapper.dataset.convId;
+                selectConversation(id);
+            }
         }
     };
 
     elements.conversationsList.addEventListener('click', handleConversationInteraction);
 
-    // Touchend for instant response on iOS (avoids 300ms delay)
-    let touchMoved = false;
-    elements.conversationsList.addEventListener('touchstart', () => {
-        touchMoved = false;
-    }, { passive: true });
-    elements.conversationsList.addEventListener('touchmove', () => {
-        touchMoved = true;
-    }, { passive: true });
+    // Generic swipe handler factory
+    function createSwipeHandler(config) {
+        const {
+            shouldStart,           // (e) => boolean - whether to start swipe
+            getTarget,              // (e) => element - get the element to transform
+            getTransform,           // (deltaX, isOpen, config) => string - calculate transform
+            getInitialState,        // (target) => boolean - check if already "open"
+            onSwipeMove,            // (target, deltaX, progress) => void - optional callback during swipe
+            onComplete,             // (target, deltaX) => void - called when swipe completes
+            onSnapBack,            // (target) => void - called when snapping back
+            threshold = 50,         // minimum distance to complete
+            maxDistance = 80,       // maximum swipe distance
+            minMovement = 10        // minimum movement to start swipe
+        } = config;
+
+        let swipeStartX = 0;
+        let swipeStartY = 0;
+        let swipeCurrentX = 0;
+        let swipeTarget = null;
+        let isSwiping = false;
+        let swipeStartTime = 0;
+
+        const handleTouchStart = (e) => {
+            if (!shouldStart(e)) return;
+
+            swipeStartX = e.touches[0].clientX;
+            swipeStartY = e.touches[0].clientY;
+            swipeCurrentX = swipeStartX;
+            swipeTarget = getTarget(e);
+            isSwiping = false;
+            swipeStartTime = Date.now();
+        };
+
+        const handleTouchMove = (e) => {
+            if (!swipeTarget) return;
+
+            swipeCurrentX = e.touches[0].clientX;
+            const currentY = e.touches[0].clientY;
+            const deltaX = swipeStartX - swipeCurrentX;
+            const deltaY = Math.abs(swipeStartY - currentY);
+
+            // Only start swiping if horizontal movement is greater than vertical
+            if (Math.abs(deltaX) > minMovement && Math.abs(deltaX) > deltaY) {
+                isSwiping = true;
+            }
+
+            if (isSwiping) {
+                const isOpen = getInitialState(swipeTarget);
+                const transform = getTransform(deltaX, isOpen, { maxDistance, threshold });
+
+                if (transform !== null) {
+                    swipeTarget.style.transform = transform;
+                    swipeTarget.style.transition = 'none';
+
+                    if (onSwipeMove) {
+                        const progress = Math.min(Math.abs(deltaX) / maxDistance, 1);
+                        onSwipeMove(swipeTarget, deltaX, progress);
+                    }
+                }
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            if (!swipeTarget) return false;
+
+            const deltaX = swipeStartX - swipeCurrentX;
+            const deltaY = Math.abs(swipeStartY - (e.changedTouches[0]?.clientY || swipeStartY));
+            const timeElapsed = Date.now() - swipeStartTime;
+            const isOpen = getInitialState(swipeTarget);
+
+            // Restore transition
+            swipeTarget.style.transition = '';
+
+            let handled = false;
+
+            if (isSwiping && Math.abs(deltaX) > deltaY) {
+                // It was a swipe
+                handled = true;
+                if (Math.abs(deltaX) > threshold) {
+                    // Swiped far enough - complete action
+                    swipeTarget.style.transform = '';
+                    onComplete(swipeTarget, deltaX);
+                } else {
+                    // Snap back
+                    swipeTarget.style.transform = '';
+                    if (onSnapBack) {
+                        onSnapBack(swipeTarget);
+                    }
+                }
+            } else if (!isSwiping && timeElapsed < 300 && Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
+                // It was a tap - let it bubble up for normal click handling
+                handled = false;
+            } else {
+                // Reset transform if it was just a scroll
+                swipeTarget.style.transform = '';
+                handled = true;
+            }
+
+            swipeTarget = null;
+            isSwiping = false;
+            return handled;
+        };
+
+        return { handleTouchStart, handleTouchMove, handleTouchEnd };
+    }
+
+    // Swipe-to-reveal delete for touch devices
+    const SWIPE_THRESHOLD = 60;
+    const SWIPE_DISTANCE = 80;
+
+    function resetSwipeStates(exceptWrapper = null) {
+        document.querySelectorAll('.conversation-item-wrapper.swiped').forEach(el => {
+            if (el !== exceptWrapper) {
+                el.classList.remove('swiped');
+                const convItem = el.querySelector('.conversation-item');
+                if (convItem) {
+                    convItem.style.transform = '';
+                }
+            }
+        });
+    }
+
+    const conversationSwipe = createSwipeHandler({
+        shouldStart: (e) => {
+            const wrapper = e.target.closest('.conversation-item-wrapper');
+            if (!wrapper) {
+                resetSwipeStates();
+                return false;
+            }
+            // Don't start swipe if clicking on delete button
+            return !e.target.closest('.conversation-delete-swipe');
+        },
+        getTarget: (e) => {
+            const wrapper = e.target.closest('.conversation-item-wrapper');
+            return wrapper?.querySelector('.conversation-item');
+        },
+        getTransform: (deltaX, isOpen, { maxDistance }) => {
+            if (isOpen && deltaX < 0) {
+                // Swiping right to close
+                const translateX = Math.max(deltaX + maxDistance, 0);
+                return `translateX(-${translateX}px)`;
+            } else if (!isOpen && deltaX > 0) {
+                // Swiping left to open
+                const translateX = Math.min(deltaX, maxDistance);
+                return `translateX(-${translateX}px)`;
+            }
+            return null;
+        },
+        getInitialState: (target) => {
+            return target?.closest('.conversation-item-wrapper')?.classList.contains('swiped') || false;
+        },
+        onComplete: (target, deltaX) => {
+            const wrapper = target.closest('.conversation-item-wrapper');
+            if (!wrapper) return;
+
+            const isOpen = wrapper.classList.contains('swiped');
+            if (isOpen && deltaX < -SWIPE_THRESHOLD) {
+                // Swiped right to close
+                wrapper.classList.remove('swiped');
+            } else if (!isOpen && deltaX > SWIPE_THRESHOLD) {
+                // Swiped left to open
+                resetSwipeStates(wrapper);
+                wrapper.classList.add('swiped');
+            }
+        },
+        onSnapBack: (target) => {
+            const wrapper = target.closest('.conversation-item-wrapper');
+            if (wrapper) {
+                wrapper.classList.remove('swiped');
+            }
+        },
+        threshold: SWIPE_THRESHOLD,
+        maxDistance: SWIPE_DISTANCE
+    });
+
+    elements.conversationsList.addEventListener('touchstart', conversationSwipe.handleTouchStart, { passive: true });
+    elements.conversationsList.addEventListener('touchmove', conversationSwipe.handleTouchMove, { passive: true });
     elements.conversationsList.addEventListener('touchend', (e) => {
-        if (!touchMoved) {
+        const handled = conversationSwipe.handleTouchEnd(e);
+        // If it was a tap (not handled by swipe), handle as conversation interaction
+        if (handled === false) {
             handleConversationInteraction(e);
         }
-    });
+    }, { passive: true });
+
+    // Close swipe when tapping elsewhere (touch and click)
+    function handleOutsideClick(e) {
+        if (!e.target.closest('.conversation-item-wrapper')) {
+            resetSwipeStates();
+        }
+    }
+    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
+    document.addEventListener('click', handleOutsideClick);
+
+    // Swipe to open/close sidebar on touch devices
+    const SIDEBAR_SWIPE_EDGE_THRESHOLD = 50; // Pixels from left edge to trigger
+    const SIDEBAR_SWIPE_THRESHOLD = 50; // Minimum swipe distance
+    const SIDEBAR_WIDTH = 280; // Match CSS variable
+
+    // Only enable on mobile (touch devices)
+    if (window.matchMedia('(hover: none)').matches) {
+        const sidebarSwipe = createSwipeHandler({
+            shouldStart: (e) => {
+                // Don't start if touching on a conversation item (let conversation swipe handle it)
+                // This prevents conflicts when trying to swipe conversations
+                if (e.target.closest('.conversation-item-wrapper') ||
+                    e.target.closest('.conversations-list')) {
+                    return false;
+                }
+
+                const isOpen = elements.sidebar.classList.contains('open');
+                // Start if touching near left edge and sidebar is closed, or if sidebar is open (can close from main content)
+                return (e.touches[0].clientX <= SIDEBAR_SWIPE_EDGE_THRESHOLD && !isOpen) || isOpen;
+            },
+            getTarget: () => elements.sidebar,
+            getTransform: (deltaX, isOpen, { maxDistance }) => {
+                // Generic handler uses: deltaX = swipeStartX - swipeCurrentX (negative when swiping right)
+                // For sidebar: we need positive deltaX for right swipe, so invert
+                const actualDeltaX = -deltaX;
+
+                if (!isOpen && actualDeltaX > 0) {
+                    // Swiping right to open - sidebar starts at -100%, move it based on swipe
+                    const translateX = Math.min(-maxDistance + actualDeltaX, 0);
+                    return `translateX(${translateX}px)`;
+                } else if (isOpen && actualDeltaX < 0) {
+                    // Swiping left to close - sidebar starts at 0, move it left
+                    const translateX = Math.max(actualDeltaX, -maxDistance);
+                    return `translateX(${translateX}px)`;
+                }
+                return null;
+            },
+            getInitialState: () => elements.sidebar.classList.contains('open'),
+            onSwipeMove: (target, deltaX, progress) => {
+                // Show overlay with opacity based on swipe progress
+                let overlay = document.querySelector('.sidebar-overlay');
+                if (!overlay) {
+                    overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    overlay.onclick = closeSidebar;
+                    elements.app.appendChild(overlay);
+                }
+                overlay.style.display = 'block';
+                const isOpen = elements.sidebar.classList.contains('open');
+                const opacity = isOpen ? (1 - progress) * 0.5 : progress * 0.5;
+                overlay.style.opacity = opacity.toString();
+            },
+            onComplete: (target, deltaX) => {
+                // Invert deltaX for sidebar direction
+                const actualDeltaX = -deltaX;
+                const isOpen = elements.sidebar.classList.contains('open');
+
+                if (!isOpen && actualDeltaX > SIDEBAR_SWIPE_THRESHOLD) {
+                    toggleSidebar();
+                } else if (isOpen && actualDeltaX < -SIDEBAR_SWIPE_THRESHOLD) {
+                    closeSidebar();
+                }
+            },
+            onSnapBack: (target) => {
+                const isOpen = elements.sidebar.classList.contains('open');
+                if (isOpen) {
+                    target.style.transform = 'translateX(0)';
+                } else {
+                    target.style.transform = 'translateX(-100%)';
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    if (overlay) {
+                        // Clear inline styles to let CSS classes control visibility
+                        overlay.style.display = '';
+                        overlay.style.opacity = '';
+                        overlay.classList.remove('visible');
+                    }
+                }
+            },
+            threshold: SIDEBAR_SWIPE_THRESHOLD,
+            maxDistance: SIDEBAR_WIDTH
+        });
+
+        document.addEventListener('touchstart', sidebarSwipe.handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', sidebarSwipe.handleTouchMove, { passive: true });
+        document.addEventListener('touchend', sidebarSwipe.handleTouchEnd, { passive: true });
+    }
 
     // Lightbox - click on message images to open fullscreen
     // File download - click on file chips to download
