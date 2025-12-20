@@ -90,22 +90,25 @@ make setup      # Create venv and install dependencies
 make run        # Run development server
 make lint       # Run ruff and mypy
 make test       # Run tests
+make deploy     # Deploy systemd service (Linux)
 ```
 
 ## Deployment
 
-A systemd user service file is included for Linux deployment:
+For production, the app uses Gunicorn as the WSGI server. A systemd user service file is included for Linux:
 
 ```bash
-# Copy service file
-cp ai-chatbot.service ~/.config/systemd/user/
+# Set production environment in .env
+FLASK_ENV=production
 
-# Edit paths in the service file
-vim ~/.config/systemd/user/ai-chatbot.service
+# Install dependencies (includes gunicorn)
+make setup
 
-# Enable and start
-systemctl --user enable ai-chatbot
-systemctl --user start ai-chatbot
+# Deploy and start the service
+make deploy
+
+# View logs
+journalctl --user -u ai-chatbot -f
 ```
 
 ## Project Structure

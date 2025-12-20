@@ -11,7 +11,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h/src/ai-chatbot
-ExecStart=%h/src/ai-chatbot/.venv/bin/python -m src.app
+ExecStart=%h/src/ai-chatbot/.venv/bin/gunicorn --bind 0.0.0.0:${PORT} --workers 2 "src.app:create_app()"
 Restart=on-failure
 RestartSec=5
 Environment=PATH=%h/src/ai-chatbot/.venv/bin:/usr/local/bin:/usr/bin:/bin

@@ -1,4 +1,4 @@
-.PHONY: setup lint run test clean
+.PHONY: setup lint run test clean deploy
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -33,3 +33,11 @@ clean:
 	rm -rf .mypy_cache .ruff_cache
 	rm -rf *.egg-info
 	find . -type f -name "*.pyc" -delete
+
+deploy:
+	@mkdir -p ~/.config/systemd/user
+	cp -f ai-chatbot.service ~/.config/systemd/user/
+	systemctl --user daemon-reload
+	systemctl --user enable ai-chatbot
+	systemctl --user restart ai-chatbot
+	@echo "Deployed. View logs with: journalctl --user -u ai-chatbot -f"
