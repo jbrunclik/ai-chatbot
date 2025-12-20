@@ -12,7 +12,8 @@ This file tracks planned features, improvements, and technical debt.
 - [x] Markdown rendering
 
 ## Phase 2 - Streaming & Polish
-- [ ] **Streaming responses** - Display tokens as they arrive from Gemini
+- [x] **Streaming responses** - Display tokens as they arrive from Gemini (with toggle)
+- [ ] **Show thinking/tool details** - Display model reasoning and tool execution behind a toggle
 - [ ] Improve error handling and user feedback
 - [ ] Add loading states and animations
 - [ ] Conversation rename/delete functionality
