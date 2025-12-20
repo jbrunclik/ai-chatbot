@@ -1,5 +1,9 @@
 // AI Chatbot Frontend Application
 
+// Constants
+// Sparkle icon with silver/white theme
+const AI_AVATAR_SVG = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2L13.5 8.5L20 10L13.5 11.5L12 18L10.5 11.5L4 10L10.5 8.5L12 2Z" fill="white"/><path d="M19 14L19.75 16.25L22 17L19.75 17.75L19 20L18.25 17.75L16 17L18.25 16.25L19 14Z" fill="white" opacity="0.7"/><path d="M6 16L6.5 17.5L8 18L6.5 18.5L6 20L5.5 18.5L4 18L5.5 17.5L6 16Z" fill="white" opacity="0.5"/></svg>';
+
 // State
 const state = {
     token: localStorage.getItem('token'),
@@ -411,7 +415,7 @@ function addStreamingMessage() {
 
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
-    avatar.textContent = 'AI';
+    avatar.innerHTML = AI_AVATAR_SVG;
 
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content';
@@ -489,7 +493,7 @@ function addMessageToUI(role, content) {
     if (role === 'user') {
         avatar.innerHTML = getUserAvatar();
     } else {
-        avatar.textContent = 'AI';
+        avatar.innerHTML = AI_AVATAR_SVG;
     }
 
     const contentEl = document.createElement('div');
@@ -529,7 +533,7 @@ function addLoadingIndicator() {
 
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
-    avatar.textContent = 'AI';
+    avatar.innerHTML = AI_AVATAR_SVG;
 
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content';
