@@ -1,6 +1,8 @@
+import json
+from collections.abc import Generator
 from typing import Any
 
-from flask import Blueprint, request
+from flask import Blueprint, Response, request
 
 from src.agent.chat_agent import ChatAgent, generate_title
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
@@ -206,10 +208,10 @@ def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
 # ============================================================================
 
 
-@api.route("/conversations/<conv_id>/chat", methods=["POST"])
+@api.route("/conversations/<conv_id>/chat/batch", methods=["POST"])
 @require_auth
-def chat(conv_id: str) -> tuple[dict[str, str], int]:
-    """Send a message and get a response."""
+def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
+    """Send a message and get a complete response (non-streaming)."""
     user = get_current_user()
     if not user:
         return {"error": "Unauthorized"}, 401
@@ -248,6 +250,65 @@ def chat(conv_id: str) -> tuple[dict[str, str], int]:
         "content": response,
         "created_at": assistant_msg.created_at.isoformat(),
     }, 200
+
+
+@api.route("/conversations/<conv_id>/chat/stream", methods=["POST"])
+@require_auth
+def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
+    """Send a message and stream the response via Server-Sent Events."""
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    conv = db.get_conversation(conv_id, user.id)
+    if not conv:
+        return {"error": "Conversation not found"}, 404
+
+    data = request.get_json() or {}
+    message = data.get("message", "").strip()
+    if not message:
+        return {"error": "Message is required"}, 400
+
+    # Save user message
+    db.add_message(conv_id, "user", message)
+
+    # Get conversation history for context
+    messages = db.get_messages(conv_id)
+    history = [
+        {"role": m.role, "content": m.content} for m in messages[:-1]
+    ]  # Exclude the just-added message
+
+    def generate() -> Generator[str, None, None]:
+        """Generator that streams tokens as SSE events."""
+        agent = ChatAgent(model_name=conv.model)
+        full_response = ""
+
+        try:
+            for token in agent.stream_chat(message, history):
+                full_response += token
+                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+
+            # Save complete response to DB
+            assistant_msg = db.add_message(conv_id, "assistant", full_response)
+
+            # Auto-generate title from first message if still default
+            if conv.title == "New Conversation":
+                new_title = generate_title(message, full_response)
+                db.update_conversation(conv_id, user.id, title=new_title)
+
+            yield f"data: {json.dumps({'type': 'done', 'id': assistant_msg.id, 'created_at': assistant_msg.created_at.isoformat()})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
 
 
 # ============================================================================

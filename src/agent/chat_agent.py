@@ -38,11 +38,13 @@ Components:
           Also includes metadata like 'extras', 'signature' which are skipped
 """
 
+from collections.abc import Generator
 from datetime import datetime
 from typing import Annotated, Any, Literal, TypedDict, cast
 
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     HumanMessage,
     SystemMessage,
@@ -220,22 +222,12 @@ class ChatAgent:
         self.with_tools = with_tools
         self.graph = create_chat_graph(model_name, with_tools=with_tools).compile()
 
-    def chat(
+    def _build_messages(
         self,
         user_message: str,
         history: list[dict[str, str]] | None = None,
-    ) -> str:
-        """
-        Send a message and get a response.
-
-        Args:
-            user_message: The user's message
-            history: Optional list of previous messages with 'role' and 'content' keys
-
-        Returns:
-            The assistant's response text
-        """
-        # Convert history to LangChain messages
+    ) -> list[BaseMessage]:
+        """Build the messages list from history and user message."""
         messages: list[BaseMessage] = []
 
         # Always add system prompt (with tool instructions if tools are enabled)
@@ -251,6 +243,25 @@ class ChatAgent:
         # Add the current user message
         messages.append(HumanMessage(content=user_message))
 
+        return messages
+
+    def chat(
+        self,
+        user_message: str,
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
+        """
+        Send a message and get a response.
+
+        Args:
+            user_message: The user's message
+            history: Optional list of previous messages with 'role' and 'content' keys
+
+        Returns:
+            The assistant's response text
+        """
+        messages = self._build_messages(user_message, history)
+
         # Run the graph
         result = self.graph.invoke(cast(Any, {"messages": messages}))
 
@@ -265,6 +276,41 @@ class ChatAgent:
                 break
 
         return response_text
+
+    def stream_chat(
+        self,
+        user_message: str,
+        history: list[dict[str, str]] | None = None,
+    ) -> Generator[str, None, None]:
+        """
+        Stream response tokens using LangGraph's stream method.
+
+        Args:
+            user_message: The user's message
+            history: Optional list of previous messages with 'role' and 'content' keys
+
+        Yields:
+            Text tokens as they are generated
+        """
+        messages = self._build_messages(user_message, history)
+
+        # Stream the graph execution with messages mode for token-level streaming
+        for event in self.graph.stream(
+            cast(Any, {"messages": messages}),
+            stream_mode="messages",
+        ):
+            # event is a tuple of (message_chunk, metadata) in messages mode
+            if isinstance(event, tuple) and len(event) >= 1:
+                message_chunk = event[0]
+                # Only yield content from AI message chunks (not tool calls or tool results)
+                if isinstance(message_chunk, AIMessageChunk):
+                    # Skip chunks that are only tool calls (no text content)
+                    if message_chunk.tool_calls or message_chunk.tool_call_chunks:
+                        continue
+                    if message_chunk.content:
+                        content = extract_text_content(message_chunk.content)
+                        if content:
+                            yield content
 
     def chat_with_state(
         self,

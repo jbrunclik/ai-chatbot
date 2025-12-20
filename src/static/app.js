@@ -9,7 +9,8 @@ const state = {
     models: [],
     defaultModel: 'gemini-3-flash-preview',
     isLoading: false,
-    googleClientId: null
+    googleClientId: null,
+    streamingEnabled: localStorage.getItem('streamingEnabled') !== 'false'  // Default: true
 };
 
 // DOM Elements
@@ -33,7 +34,9 @@ const elements = {
     // New model selector dropdown
     modelSelectorBtn: document.getElementById('model-selector-btn'),
     currentModelName: document.getElementById('current-model-name'),
-    modelDropdown: document.getElementById('model-dropdown')
+    modelDropdown: document.getElementById('model-dropdown'),
+    // Streaming toggle
+    streamingToggle: document.getElementById('streaming-toggle')
 };
 
 // API Functions
@@ -281,12 +284,21 @@ async function sendMessage() {
     autoResizeTextarea();
     updateSendButton();
 
+    // Choose streaming or batch mode
+    if (state.streamingEnabled) {
+        await sendMessageStream(content);
+    } else {
+        await sendMessageBatch(content);
+    }
+}
+
+async function sendMessageBatch(content) {
     // Show loading indicator
     state.isLoading = true;
     const loadingEl = addLoadingIndicator();
 
     try {
-        const data = await api(`/api/conversations/${state.currentConversation.id}/chat`, {
+        const data = await api(`/api/conversations/${state.currentConversation.id}/chat/batch`, {
             method: 'POST',
             body: JSON.stringify({ message: content })
         });
@@ -307,6 +319,146 @@ async function sendMessage() {
     } finally {
         state.isLoading = false;
     }
+}
+
+async function sendMessageStream(content) {
+    state.isLoading = true;
+
+    // Create streaming message element
+    const messageEl = addStreamingMessage();
+    const contentEl = messageEl.querySelector('.message-content');
+    let fullResponse = '';
+
+    try {
+        const response = await fetch(`/api/conversations/${state.currentConversation.id}/chat/stream`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': state.token ? `Bearer ${state.token}` : ''
+            },
+            body: JSON.stringify({ message: content })
+        });
+
+        if (!response.ok) {
+            throw new Error('Stream request failed');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE lines
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';  // Keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+
+                        if (data.type === 'token') {
+                            fullResponse += data.text;
+                            updateStreamingMessage(contentEl, fullResponse);
+                        } else if (data.type === 'done') {
+                            finalizeStreamingMessage(messageEl, fullResponse);
+                            await loadConversations();  // Refresh for title update
+                        } else if (data.type === 'error') {
+                            finalizeStreamingMessage(messageEl, 'Sorry, an error occurred: ' + data.message);
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse SSE data:', e);
+                    }
+                }
+            }
+        }
+
+        // Handle any remaining buffer
+        if (buffer.startsWith('data: ')) {
+            try {
+                const data = JSON.parse(buffer.slice(6));
+                if (data.type === 'token') {
+                    fullResponse += data.text;
+                }
+                if (data.type === 'done' || data.type === 'token') {
+                    finalizeStreamingMessage(messageEl, fullResponse);
+                }
+            } catch (e) {
+                // Ignore incomplete final data
+            }
+        }
+
+    } catch (error) {
+        console.error('Stream error:', error);
+        finalizeStreamingMessage(messageEl, fullResponse || 'Sorry, an error occurred. Please try again.');
+    } finally {
+        state.isLoading = false;
+    }
+}
+
+function addStreamingMessage() {
+    // Remove welcome message if present
+    const welcome = elements.messages.querySelector('.welcome-message');
+    if (welcome) welcome.remove();
+
+    const messageEl = document.createElement('div');
+    messageEl.className = 'message assistant streaming';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = 'AI';
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content';
+    contentEl.innerHTML = '<span class="cursor">|</span>';
+
+    messageEl.appendChild(avatar);
+    messageEl.appendChild(contentEl);
+    elements.messages.appendChild(messageEl);
+
+    elements.messages.scrollTop = elements.messages.scrollHeight;
+
+    return messageEl;
+}
+
+function updateStreamingMessage(contentEl, content) {
+    // Render markdown with cursor at end
+    contentEl.innerHTML = marked.parse(content, {
+        breaks: true,
+        gfm: true
+    }) + '<span class="cursor">|</span>';
+
+    // Scroll to bottom
+    elements.messages.scrollTop = elements.messages.scrollHeight;
+}
+
+function finalizeStreamingMessage(messageEl, content) {
+    messageEl.classList.remove('streaming');
+    const contentEl = messageEl.querySelector('.message-content');
+
+    // Final render with syntax highlighting
+    contentEl.innerHTML = marked.parse(content, {
+        breaks: true,
+        gfm: true,
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                return hljs.highlight(code, { language: lang }).value;
+            }
+            return hljs.highlightAuto(code).value;
+        }
+    });
+
+    // Apply syntax highlighting to code blocks
+    contentEl.querySelectorAll('pre code').forEach(block => {
+        hljs.highlightElement(block);
+    });
+
+    elements.messages.scrollTop = elements.messages.scrollHeight;
 }
 
 function addMessageToUI(role, content) {
@@ -565,6 +717,19 @@ function closeModelModal() {
     elements.modelModal.classList.add('hidden');
 }
 
+// Streaming toggle
+function toggleStreaming() {
+    state.streamingEnabled = !state.streamingEnabled;
+    localStorage.setItem('streamingEnabled', state.streamingEnabled);
+    updateStreamingToggle();
+}
+
+function updateStreamingToggle() {
+    if (elements.streamingToggle) {
+        elements.streamingToggle.checked = state.streamingEnabled;
+    }
+}
+
 // Event Listeners
 function setupEventListeners() {
     // Send message
@@ -610,6 +775,11 @@ function setupEventListeners() {
     });
 
     // Note: Google login button is rendered by GIS, no click handler needed
+
+    // Streaming toggle
+    if (elements.streamingToggle) {
+        elements.streamingToggle.addEventListener('change', toggleStreaming);
+    }
 
     // Conversation list event delegation (for iOS Safari compatibility)
     // Use both click and touchend for responsive single-tap on mobile
@@ -661,6 +831,9 @@ window.selectModel = selectModel;
 async function init() {
     // Setup event listeners
     setupEventListeners();
+
+    // Initialize streaming toggle state
+    updateStreamingToggle();
 
     // Initialize Google Sign In (will render button when needed)
     await initGoogleSignIn();
