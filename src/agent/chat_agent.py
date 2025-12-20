@@ -38,6 +38,7 @@ Components:
           Also includes metadata like 'extras', 'signature' which are skipped
 """
 
+from datetime import datetime
 from typing import Annotated, Any, Literal, TypedDict, cast
 
 from langchain_core.messages import (
@@ -100,9 +101,11 @@ When citing information from searches, mention the source."""
 
 def get_system_prompt(with_tools: bool = True) -> str:
     """Build the system prompt, optionally including tool instructions."""
+    date_context = f"\n\nCurrent date and time: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
     if with_tools and TOOLS:
-        return BASE_SYSTEM_PROMPT + TOOLS_SYSTEM_PROMPT
-    return BASE_SYSTEM_PROMPT
+        return BASE_SYSTEM_PROMPT + TOOLS_SYSTEM_PROMPT + date_context
+    return BASE_SYSTEM_PROMPT + date_context
 
 
 def extract_text_content(content: str | list[Any] | dict[str, Any]) -> str:
