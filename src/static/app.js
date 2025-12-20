@@ -152,6 +152,7 @@ async function createConversation() {
         state.conversations.unshift(data);
         await selectConversation(data.id);
         renderConversationsList();
+        elements.messageInput.focus();
     } catch (error) {
         console.error('Failed to create conversation:', error);
     }
