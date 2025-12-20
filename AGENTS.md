@@ -77,6 +77,16 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - **Bump `Config.VERSION`** in [config.py](src/config.py) before committing frontend changes (cache busting)
 - Frontend: ES modules, no build step
 
+## iOS Safari Gotchas
+
+When working on mobile/PWA features, beware of these iOS Safari issues:
+
+1. **`100vh` is broken** - Use `height: 100%` on containers instead of `100vh`. iOS Safari calculates `100vh` as if the address bar is hidden, causing content overflow.
+
+2. **Inline `onclick` handlers don't work reliably** - Use event delegation instead of inline `onclick` on dynamically created elements. Attach listeners to parent containers.
+
+3. **PWA caching is aggressive** - Users may need to remove and re-add the app to home screen to see changes. Bump `Config.VERSION` for cache busting.
+
 ## Common Tasks
 
 ### Add a new API endpoint

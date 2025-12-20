@@ -202,6 +202,9 @@ async function createConversation() {
 }
 
 async function selectConversation(id) {
+    // Close sidebar immediately for better mobile UX
+    closeSidebar();
+
     try {
         const data = await api(`/api/conversations/${id}`);
         state.currentConversation = data;
@@ -210,7 +213,6 @@ async function selectConversation(id) {
         highlightActiveConversation();
         updateCurrentModelDisplay();
         renderModelDropdown();
-        closeSidebar();
     } catch (error) {
         console.error('Failed to load conversation:', error);
     }
@@ -221,6 +223,10 @@ async function deleteConversation(id, event) {
 
     if (!confirm('Delete this conversation?')) return;
 
+    await deleteConversationById(id);
+}
+
+async function deleteConversationById(id) {
     try {
         await api(`/api/conversations/${id}`, { method: 'DELETE' });
         state.conversations = state.conversations.filter(c => c.id !== id);
@@ -388,9 +394,9 @@ async function selectModel(modelId) {
 function renderConversationsList() {
     elements.conversationsList.innerHTML = state.conversations.map(conv => `
         <div class="conversation-item ${conv.id === state.currentConversation?.id ? 'active' : ''}"
-             onclick="selectConversation('${conv.id}')">
+             data-conv-id="${conv.id}">
             <span class="conversation-title">${escapeHtml(conv.title)}</span>
-            <button class="conversation-delete" onclick="deleteConversation('${conv.id}', event)">×</button>
+            <button class="conversation-delete" data-delete-id="${conv.id}">×</button>
         </div>
     `).join('');
 }
@@ -574,6 +580,46 @@ function setupEventListeners() {
     });
 
     // Note: Google login button is rendered by GIS, no click handler needed
+
+    // Conversation list event delegation (for iOS Safari compatibility)
+    // Use both click and touchend for responsive single-tap on mobile
+    const handleConversationInteraction = (e) => {
+        // Handle delete button
+        const deleteBtn = e.target.closest('[data-delete-id]');
+        if (deleteBtn) {
+            e.stopPropagation();
+            e.preventDefault();
+            const id = deleteBtn.dataset.deleteId;
+            if (confirm('Delete this conversation?')) {
+                deleteConversationById(id);
+            }
+            return;
+        }
+
+        // Handle conversation selection
+        const convItem = e.target.closest('[data-conv-id]');
+        if (convItem) {
+            e.preventDefault();
+            const id = convItem.dataset.convId;
+            selectConversation(id);
+        }
+    };
+
+    elements.conversationsList.addEventListener('click', handleConversationInteraction);
+
+    // Touchend for instant response on iOS (avoids 300ms delay)
+    let touchMoved = false;
+    elements.conversationsList.addEventListener('touchstart', () => {
+        touchMoved = false;
+    }, { passive: true });
+    elements.conversationsList.addEventListener('touchmove', () => {
+        touchMoved = true;
+    }, { passive: true });
+    elements.conversationsList.addEventListener('touchend', (e) => {
+        if (!touchMoved) {
+            handleConversationInteraction(e);
+        }
+    });
 }
 
 // Make functions available globally for onclick handlers
