@@ -8,7 +8,8 @@ const state = {
     currentConversation: null,
     models: [],
     defaultModel: 'gemini-3-flash-preview',
-    isLoading: false
+    isLoading: false,
+    googleClientId: null
 };
 
 // DOM Elements
@@ -82,14 +83,63 @@ async function checkAuth() {
     }
 }
 
-async function login() {
+async function initGoogleSignIn() {
+    // Fetch client ID from backend
     try {
-        const data = await api('/auth/login');
-        if (data.auth_url) {
-            window.location.href = data.auth_url;
+        const data = await fetch('/auth/client-id').then(r => r.json());
+        state.googleClientId = data.client_id;
+
+        if (!state.googleClientId) {
+            console.error('Google Client ID not configured');
+            return;
+        }
+
+        // Initialize Google Identity Services
+        google.accounts.id.initialize({
+            client_id: state.googleClientId,
+            callback: handleGoogleCredential,
+            auto_select: false
+        });
+
+        // Render the Google Sign In button
+        google.accounts.id.renderButton(
+            elements.googleLoginBtn,
+            {
+                theme: 'filled_black',
+                size: 'large',
+                text: 'signin_with',
+                shape: 'rectangular',
+                width: 280
+            }
+        );
+    } catch (error) {
+        console.error('Failed to initialize Google Sign In:', error);
+    }
+}
+
+async function handleGoogleCredential(response) {
+    try {
+        const data = await api('/auth/google', {
+            method: 'POST',
+            body: JSON.stringify({ credential: response.credential })
+        });
+
+        if (data.token) {
+            state.token = data.token;
+            state.user = data.user;
+            localStorage.setItem('token', data.token);
+            hideLoginOverlay();
+            renderUserInfo();
+
+            // Load data after login
+            await Promise.all([
+                loadConversations(),
+                loadModels()
+            ]);
         }
     } catch (error) {
-        console.error('Login error:', error);
+        console.error('Google auth error:', error);
+        alert('Authentication failed: ' + error.message);
     }
 }
 
@@ -97,39 +147,32 @@ function logout() {
     state.token = null;
     state.user = null;
     localStorage.removeItem('token');
+    // Revoke Google session
+    if (state.googleClientId) {
+        google.accounts.id.disableAutoSelect();
+    }
     showLoginOverlay();
 }
 
 function showLoginOverlay() {
     elements.loginOverlay.classList.remove('hidden');
+    // Re-render the Google button when overlay is shown
+    if (state.googleClientId && typeof google !== 'undefined') {
+        google.accounts.id.renderButton(
+            elements.googleLoginBtn,
+            {
+                theme: 'filled_black',
+                size: 'large',
+                text: 'signin_with',
+                shape: 'rectangular',
+                width: 280
+            }
+        );
+    }
 }
 
 function hideLoginOverlay() {
     elements.loginOverlay.classList.add('hidden');
-}
-
-// Handle OAuth callback
-function handleOAuthCallback() {
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get('code');
-
-    if (code) {
-        // Exchange code for token
-        fetch(`/auth/callback?code=${code}`)
-            .then(res => res.json())
-            .then(data => {
-                if (data.token) {
-                    state.token = data.token;
-                    state.user = data.user;
-                    localStorage.setItem('token', data.token);
-                    // Clear URL params
-                    window.history.replaceState({}, '', '/');
-                    hideLoginOverlay();
-                    init();
-                }
-            })
-            .catch(console.error);
-    }
 }
 
 // Conversation Functions
@@ -378,7 +421,7 @@ function renderUserInfo() {
     if (!state.user) return;
 
     elements.userInfo.innerHTML = `
-        ${state.user.picture ? `<img src="${state.user.picture}" class="user-avatar" alt="Avatar">` : '<div class="user-avatar"></div>'}
+        ${state.user.picture ? `<img src="${state.user.picture}" class="user-avatar" alt="Avatar" referrerpolicy="no-referrer">` : '<div class="user-avatar"></div>'}
         <span class="user-name">${escapeHtml(state.user.name)}</span>
     `;
 }
@@ -530,8 +573,7 @@ function setupEventListeners() {
         }
     });
 
-    // Login
-    elements.googleLoginBtn.addEventListener('click', login);
+    // Note: Google login button is rendered by GIS, no click handler needed
 }
 
 // Make functions available globally for onclick handlers
@@ -541,11 +583,11 @@ window.selectModel = selectModel;
 
 // Initialize
 async function init() {
-    // Check for OAuth callback
-    handleOAuthCallback();
-
     // Setup event listeners
     setupEventListeners();
+
+    // Initialize Google Sign In (will render button when needed)
+    await initGoogleSignIn();
 
     // Check authentication
     const isAuthenticated = await checkAuth();

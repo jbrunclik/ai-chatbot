@@ -16,7 +16,7 @@ src/
 ├── config.py           # Environment config
 ├── auth/
 │   ├── jwt_auth.py     # JWT token handling, @require_auth decorator
-│   └── google_oauth.py # OAuth flow, email whitelist
+│   └── google_auth.py  # GIS token validation, email whitelist
 ├── api/
 │   └── routes.py       # REST endpoints (/api/*, /auth/*)
 ├── agent/
@@ -57,8 +57,16 @@ Use `extract_text_content()` in [chat_agent.py](src/agent/chat_agent.py) to norm
 
 ## Auth Flow
 
+Uses Google Identity Services (GIS) for client-side authentication:
+
 1. `LOCAL_MODE=true` → Skip all auth, use "local@localhost" user
-2. Otherwise: Google OAuth → JWT token → `@require_auth` decorator
+2. Otherwise:
+   - Frontend loads GIS library and renders "Sign in with Google" button
+   - User clicks → Google popup → Returns ID token to frontend
+   - Frontend sends token to `POST /auth/google`
+   - Backend validates token via Google's tokeninfo endpoint
+   - Backend checks email whitelist, returns JWT
+   - Frontend stores JWT for subsequent API calls
 
 ## Code Style
 
@@ -83,3 +91,10 @@ Edit [config.py](src/config.py) `MODELS` dict.
 
 - [TODO.md](TODO.md) - Memory bank for planned work
 - [README.md](README.md) - User-facing documentation
+
+## Documentation Maintenance
+
+When making significant changes to the codebase:
+1. Update [README.md](README.md) if user-facing features change
+2. Update this file (CLAUDE.md) if architecture, code patterns, or developer workflows change
+3. Update [TODO.md](TODO.md) to mark completed items or add new planned work

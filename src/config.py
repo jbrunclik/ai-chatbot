@@ -20,9 +20,8 @@ class Config:
     }
     DEFAULT_MODEL = "gemini-3-flash-preview"
 
-    # Google OAuth
+    # Google Identity Services (GIS) - only Client ID needed
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
-    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
     # JWT Authentication
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-secret-change-me")
@@ -56,8 +55,6 @@ class Config:
         if not cls.LOCAL_MODE:
             if not cls.GOOGLE_CLIENT_ID:
                 errors.append("GOOGLE_CLIENT_ID is required (or set LOCAL_MODE=true)")
-            if not cls.GOOGLE_CLIENT_SECRET:
-                errors.append("GOOGLE_CLIENT_SECRET is required (or set LOCAL_MODE=true)")
             if not cls.ALLOWED_EMAILS:
                 errors.append("ALLOWED_EMAILS is required (or set LOCAL_MODE=true)")
 

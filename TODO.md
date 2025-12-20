@@ -6,7 +6,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] Project structure and configuration
 - [x] Flask backend with Gemini integration
 - [x] SQLite chat storage
-- [x] Google OAuth with email whitelist
+- [x] Google Sign In with email whitelist
 - [x] Basic dark theme UI
 - [x] Model selection (Pro/Flash)
 - [x] Markdown rendering
