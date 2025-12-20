@@ -1,11 +1,108 @@
-from typing import Annotated, Any, TypedDict, cast
+"""Chat agent with tool support using LangGraph.
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+This module implements an agentic chat loop using LangGraph that supports tool calling.
+The agent can use web search and URL fetching tools to answer questions about current events.
+
+Architecture:
+    The agent uses a cyclic graph pattern for tool calling:
+
+    ┌─────────────────────────────────────────────────────┐
+    │                                                     │
+    │   Entry ──► Chat Node ──► Conditional Edge ──► END  │
+    │                │                 │                  │
+    │                │           (has tool calls?)        │
+    │                │                 │                  │
+    │                │                 ▼                  │
+    │                └─────────── Tool Node               │
+    │                                                     │
+    └─────────────────────────────────────────────────────┘
+
+Flow:
+    1. User message is added to the conversation state
+    2. Chat node invokes the LLM with the current messages
+    3. If the LLM response contains tool calls:
+       - Tool node executes the requested tools
+       - Results are added as ToolMessages
+       - Control returns to Chat node (step 2)
+    4. If no tool calls, the response is returned to the user
+
+Components:
+    - AgentState: TypedDict holding conversation messages
+    - ChatAgent: Main class with chat() and chat_with_state() methods
+    - SYSTEM_PROMPT: Instructions for when to use web tools
+    - extract_text_content(): Helper to handle Gemini's varied response formats:
+        * str: Plain text responses (most common)
+        * dict: Structured content like {'type': 'text', 'text': '...'}
+        * list: Multi-part responses with tool calls, e.g.,
+          [{'type': 'text', 'text': '...'}, {'type': 'tool_use', ...}]
+          Also includes metadata like 'extras', 'signature' which are skipped
+"""
+
+from typing import Annotated, Any, Literal, TypedDict, cast
+
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode
 
+from src.agent.tools import TOOLS
 from src.config import Config
+
+BASE_SYSTEM_PROMPT = """You are a helpful, harmless, and honest AI assistant.
+
+# Core Principles
+- Be direct and confident in your responses. Avoid unnecessary hedging or filler phrases.
+- If you don't know something, say so clearly rather than making things up.
+- When asked for opinions, you can share perspectives while noting they're your views.
+- Match the user's tone and level of formality.
+- For complex questions, think step-by-step before answering.
+
+# Response Format
+- Use markdown formatting when it improves readability (headers, lists, code blocks).
+- Keep responses concise unless the user asks for detail.
+- For code: include brief comments, use consistent style, handle edge cases.
+- When showing multiple options, use numbered lists with pros/cons.
+
+# Safety & Ethics
+- Never help with illegal activities, harm, or deception.
+- Protect user privacy; don't ask for unnecessary personal information.
+- For medical, legal, or financial questions, recommend consulting professionals.
+- If a request seems harmful, explain why you can't help and offer alternatives."""
+
+TOOLS_SYSTEM_PROMPT = """
+# Tools Available
+You have access to web tools for real-time information:
+- **web_search**: Search the web for current information, news, prices, events, etc.
+- **fetch_url**: Fetch and read the content of a specific web page.
+
+# When to Use Tools
+ALWAYS use web_search first when the user asks about:
+- Current events, news, "what happened today/recently"
+- Real-time data: stock prices, crypto, weather, sports scores
+- Recent releases, updates, or announcements
+- Anything that might have changed since your training cutoff
+- Facts you're uncertain about (verify before answering)
+
+After searching, use fetch_url to read specific pages for more details if needed.
+Do NOT rely on training data for time-sensitive information.
+
+# Knowledge Cutoff
+Your training data has a cutoff date. For anything after that, use web_search.
+When citing information from searches, mention the source."""
+
+
+def get_system_prompt(with_tools: bool = True) -> str:
+    """Build the system prompt, optionally including tool instructions."""
+    if with_tools and TOOLS:
+        return BASE_SYSTEM_PROMPT + TOOLS_SYSTEM_PROMPT
+    return BASE_SYSTEM_PROMPT
 
 
 def extract_text_content(content: str | list[Any] | dict[str, Any]) -> str:
@@ -47,14 +144,31 @@ class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
 
 
-def create_chat_model(model_name: str) -> ChatGoogleGenerativeAI:
-    """Create a Gemini chat model."""
-    return ChatGoogleGenerativeAI(
+def create_chat_model(model_name: str, with_tools: bool = True) -> ChatGoogleGenerativeAI:
+    """Create a Gemini chat model, optionally with tools bound."""
+    model = ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=Config.GEMINI_API_KEY,
         temperature=1.0,  # Recommended default for Gemini 3
         convert_system_message_to_human=True,
     )
+
+    if with_tools and TOOLS:
+        return model.bind_tools(TOOLS)  # type: ignore[return-value]
+
+    return model
+
+
+def should_continue(state: AgentState) -> Literal["tools", "end"]:
+    """Decide whether to continue to tools or end the conversation."""
+    messages = state["messages"]
+    last_message = messages[-1]
+
+    # If the last message has tool calls, continue to tools
+    if isinstance(last_message, AIMessage) and last_message.tool_calls:
+        return "tools"
+
+    return "end"
 
 
 def chat_node(state: AgentState, model: ChatGoogleGenerativeAI) -> dict[str, list[BaseMessage]]:
@@ -64,9 +178,9 @@ def chat_node(state: AgentState, model: ChatGoogleGenerativeAI) -> dict[str, lis
     return {"messages": [response]}
 
 
-def create_chat_graph(model_name: str) -> StateGraph[AgentState]:
-    """Create a simple chat graph for conversation."""
-    model = create_chat_model(model_name)
+def create_chat_graph(model_name: str, with_tools: bool = True) -> StateGraph[AgentState]:
+    """Create a chat graph with optional tool support."""
+    model = create_chat_model(model_name, with_tools=with_tools)
 
     # Define the graph
     graph: StateGraph[AgentState] = StateGraph(AgentState)
@@ -74,21 +188,34 @@ def create_chat_graph(model_name: str) -> StateGraph[AgentState]:
     # Add the chat node
     graph.add_node("chat", lambda state: chat_node(state, model))
 
-    # Set entry point
-    graph.set_entry_point("chat")
+    if with_tools and TOOLS:
+        # Add tool node
+        tool_node = ToolNode(TOOLS)
+        graph.add_node("tools", tool_node)
 
-    # Connect to end
-    graph.add_edge("chat", END)
+        # Set entry point
+        graph.set_entry_point("chat")
+
+        # Add conditional edge based on whether to use tools
+        graph.add_conditional_edges("chat", should_continue, {"tools": "tools", "end": END})
+
+        # After tools, go back to chat
+        graph.add_edge("tools", "chat")
+    else:
+        # Simple graph without tools
+        graph.set_entry_point("chat")
+        graph.add_edge("chat", END)
 
     return graph
 
 
 class ChatAgent:
-    """Agent for handling chat conversations."""
+    """Agent for handling chat conversations with tool support."""
 
-    def __init__(self, model_name: str = Config.DEFAULT_MODEL) -> None:
+    def __init__(self, model_name: str = Config.DEFAULT_MODEL, with_tools: bool = True) -> None:
         self.model_name = model_name
-        self.graph = create_chat_graph(model_name).compile()
+        self.with_tools = with_tools
+        self.graph = create_chat_graph(model_name, with_tools=with_tools).compile()
 
     def chat(
         self,
@@ -107,6 +234,10 @@ class ChatAgent:
         """
         # Convert history to LangChain messages
         messages: list[BaseMessage] = []
+
+        # Always add system prompt (with tool instructions if tools are enabled)
+        messages.append(SystemMessage(content=get_system_prompt(self.with_tools)))
+
         if history:
             for msg in history:
                 if msg["role"] == "user":
@@ -120,9 +251,17 @@ class ChatAgent:
         # Run the graph
         result = self.graph.invoke(cast(Any, {"messages": messages}))
 
-        # Extract the assistant's response
-        last_message = result["messages"][-1]
-        return extract_text_content(last_message.content)
+        # Extract the assistant's response (last AI message without tool calls)
+        response_text = ""
+        for msg in reversed(result["messages"]):
+            if isinstance(msg, AIMessage):
+                # Skip messages that only have tool calls
+                if msg.tool_calls and not extract_text_content(msg.content):
+                    continue
+                response_text = extract_text_content(msg.content)
+                break
+
+        return response_text
 
     def chat_with_state(
         self,
@@ -141,12 +280,23 @@ class ChatAgent:
         """
         # Restore previous messages or start fresh
         messages: list[BaseMessage] = []
+
+        # Always add system prompt (with tool instructions if tools are enabled)
+        messages.append(SystemMessage(content=get_system_prompt(self.with_tools)))
+
         if previous_state and "messages" in previous_state:
             for msg_data in previous_state["messages"]:
                 if msg_data["type"] == "human":
                     messages.append(HumanMessage(content=msg_data["content"]))
                 elif msg_data["type"] == "ai":
                     messages.append(AIMessage(content=msg_data["content"]))
+                elif msg_data["type"] == "tool":
+                    messages.append(
+                        ToolMessage(
+                            content=msg_data["content"],
+                            tool_call_id=msg_data.get("tool_call_id", ""),
+                        )
+                    )
 
         # Add the current user message
         messages.append(HumanMessage(content=user_message))
@@ -154,19 +304,33 @@ class ChatAgent:
         # Run the graph
         result = self.graph.invoke(cast(Any, {"messages": messages}))
 
-        # Extract response
-        last_message = result["messages"][-1]
-        response = extract_text_content(last_message.content)
+        # Extract response (last AI message with actual content)
+        response_text = ""
+        for msg in reversed(result["messages"]):
+            if isinstance(msg, AIMessage):
+                if msg.tool_calls and not extract_text_content(msg.content):
+                    continue
+                response_text = extract_text_content(msg.content)
+                break
 
-        # Serialize state for persistence
-        new_state = {
-            "messages": [
-                {
-                    "type": "human" if isinstance(m, HumanMessage) else "ai",
-                    "content": extract_text_content(m.content),
-                }
-                for m in result["messages"]
-            ]
-        }
+        # Serialize state for persistence (includes tool messages for multi-turn tool workflows)
+        new_state: dict[str, Any] = {"messages": []}
+        for m in result["messages"]:
+            if isinstance(m, HumanMessage):
+                new_state["messages"].append(
+                    {"type": "human", "content": extract_text_content(m.content)}
+                )
+            elif isinstance(m, AIMessage):
+                content = extract_text_content(m.content)
+                if content:  # Only store if there's actual content
+                    new_state["messages"].append({"type": "ai", "content": content})
+            elif isinstance(m, ToolMessage):
+                new_state["messages"].append(
+                    {
+                        "type": "tool",
+                        "content": m.content,
+                        "tool_call_id": m.tool_call_id,
+                    }
+                )
 
-        return response, new_state
+        return response_text, new_state

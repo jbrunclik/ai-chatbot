@@ -19,12 +19,13 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Mobile gesture support (swipe to open sidebar)
 
 ## Phase 3 - Tools & Extensions
-- [ ] **Tool framework** - Extensible system for adding agent tools
+- [x] **Tool framework** - Extensible system for adding agent tools
+- [x] Web search tool (DuckDuckGo)
+- [x] URL fetch tool (extract text from web pages)
 - [ ] Image generation tool (Gemini 3 Pro Image or Imagen)
 - [ ] Text-to-speech tool
 - [ ] Code execution sandbox
 - [ ] File upload and processing
-- [ ] Web search tool
 
 ## Phase 4 - Advanced Features
 - [ ] Multiple AI providers (Anthropic Claude, OpenAI)

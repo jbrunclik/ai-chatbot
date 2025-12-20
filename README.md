@@ -5,6 +5,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 ## Features
 
 - Chat with Google Gemini AI models (Pro and Flash)
+- **Web tools**: Real-time web search (DuckDuckGo) and URL fetching
 - Multiple conversations with history
 - Model selection (Gemini 3 Pro for complex tasks, Flash for speed)
 - Markdown rendering with syntax highlighting

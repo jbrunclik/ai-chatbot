@@ -20,7 +20,8 @@ src/
 ├── api/
 │   └── routes.py       # REST endpoints (/api/*, /auth/*)
 ├── agent/
-│   └── chat_agent.py   # LangGraph agent with Gemini
+│   ├── chat_agent.py   # LangGraph agent with Gemini
+│   └── tools.py        # Web tools (fetch_url, web_search)
 ├── db/
 │   └── models.py       # SQLite: User, Conversation, Message, AgentState
 └── static/
@@ -73,7 +74,7 @@ Use `extract_text_content()` in [chat_agent.py](src/agent/chat_agent.py) to norm
 Edit [routes.py](src/api/routes.py), add route to `api` blueprint.
 
 ### Add a new tool to the agent
-Edit [chat_agent.py](src/agent/chat_agent.py), add node to StateGraph.
+Edit [tools.py](src/agent/tools.py), add function with `@tool` decorator and add to `TOOLS` list.
 
 ### Change available models
 Edit [config.py](src/config.py) `MODELS` dict.
