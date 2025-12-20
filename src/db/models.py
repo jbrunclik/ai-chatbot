@@ -3,12 +3,17 @@ import sqlite3
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from yoyo import get_backend, read_migrations
+
 from src.config import Config
+
+# Path to migrations directory
+MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
 
 
 @dataclass
@@ -35,8 +40,9 @@ class Message:
     id: str
     conversation_id: str
     role: str  # "user" or "assistant"
-    content: str
+    content: str  # Plain text message
     created_at: datetime
+    files: list[dict[str, Any]] = field(default_factory=list)  # File attachments
 
 
 @dataclass
@@ -61,46 +67,11 @@ class Database:
             conn.close()
 
     def _init_db(self) -> None:
-        with self._get_conn() as conn:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    email TEXT UNIQUE NOT NULL,
-                    name TEXT NOT NULL,
-                    picture TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS conversations (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (user_id) REFERENCES users(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS messages (
-                    id TEXT PRIMARY KEY,
-                    conversation_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS agent_states (
-                    conversation_id TEXT PRIMARY KEY,
-                    state_json TEXT NOT NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_conversations_user_id ON conversations(user_id);
-                CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
-            """)
-            conn.commit()
+        """Run yoyo migrations to initialize/update the database schema."""
+        backend = get_backend(f"sqlite:///{self.db_path}")
+        migrations = read_migrations(str(MIGRATIONS_DIR))
+        with backend.lock():
+            backend.apply_migrations(backend.to_apply(migrations))
 
     # User operations
     def get_or_create_user(self, email: str, name: str, picture: str | None = None) -> User:
@@ -117,9 +88,10 @@ class Database:
                 )
 
             user_id = str(uuid.uuid4())
+            now = datetime.now()
             conn.execute(
-                "INSERT INTO users (id, email, name, picture) VALUES (?, ?, ?, ?)",
-                (user_id, email, name, picture),
+                "INSERT INTO users (id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, email, name, picture, now.isoformat()),
             )
             conn.commit()
 
@@ -128,7 +100,7 @@ class Database:
                 email=email,
                 name=name,
                 picture=picture,
-                created_at=datetime.now(),
+                created_at=now,
             )
 
     def get_user_by_id(self, user_id: str) -> User | None:
@@ -248,14 +220,34 @@ class Database:
             return cursor.rowcount > 0
 
     # Message operations
-    def add_message(self, conversation_id: str, role: str, content: str) -> Message:
+    def add_message(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        files: list[dict[str, Any]] | None = None,
+    ) -> Message:
+        """Add a message to a conversation.
+
+        Args:
+            conversation_id: The conversation ID
+            role: "user" or "assistant"
+            content: Plain text message
+            files: Optional list of file attachments
+
+        Returns:
+            The created Message
+        """
         msg_id = str(uuid.uuid4())
         now = datetime.now()
+        files = files or []
+        files_json = json.dumps(files) if files else None
 
         with self._get_conn() as conn:
             conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
-                (msg_id, conversation_id, role, content, now.isoformat()),
+                """INSERT INTO messages (id, conversation_id, role, content, files, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (msg_id, conversation_id, role, content, files_json, now.isoformat()),
             )
             # Update conversation's updated_at
             conn.execute(
@@ -270,6 +262,7 @@ class Database:
             role=role,
             content=content,
             created_at=now,
+            files=files,
         )
 
     def get_messages(self, conversation_id: str) -> list[Message]:
@@ -286,9 +279,30 @@ class Database:
                     role=row["role"],
                     content=row["content"],
                     created_at=datetime.fromisoformat(row["created_at"]),
+                    files=json.loads(row["files"]) if row["files"] else [],
                 )
                 for row in rows
             ]
+
+    def get_message_by_id(self, message_id: str) -> Message | None:
+        """Get a single message by its ID."""
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (message_id,),
+            ).fetchone()
+
+            if not row:
+                return None
+
+            return Message(
+                id=row["id"],
+                conversation_id=row["conversation_id"],
+                role=row["role"],
+                content=row["content"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                files=json.loads(row["files"]) if row["files"] else [],
+            )
 
     # Agent state operations
     def save_agent_state(self, conversation_id: str, state: dict[str, Any]) -> None:

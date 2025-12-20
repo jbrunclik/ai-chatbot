@@ -26,7 +26,8 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Image generation tool (Gemini 3 Pro Image or Imagen)
 - [ ] Text-to-speech tool
 - [ ] Code execution sandbox
-- [ ] File upload and processing
+- [x] File upload and processing (images, PDFs, text files)
+- [x] **Image thumbnails & lightbox** - Thumbnails in chat, click to view full-size with lazy loading
 
 ## Phase 4 - Advanced Features
 - [ ] Multiple AI providers (Anthropic Claude, OpenAI)
@@ -40,7 +41,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Comprehensive test suite
 - [ ] Rate limiting
 - [ ] Request logging and monitoring
-- [ ] Database migrations system
+- [x] Database migrations system (yoyo-migrations)
 - [ ] Backup and restore
 - [ ] Docker deployment option
 
@@ -50,7 +51,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Docker image and docker-compose setup
 
 ## Technical Debt
-- [ ] Add proper database migrations (alembic)
+- [x] Add proper database migrations (yoyo-migrations)
 - [ ] Add request validation (pydantic or marshmallow)
 - [ ] Consider async Flask (quart) for better concurrency
 - [ ] Add OpenAPI/Swagger documentation

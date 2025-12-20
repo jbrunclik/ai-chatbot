@@ -8,7 +8,7 @@ load_dotenv()
 
 class Config:
     # App version (bump this to bust static file caches)
-    VERSION = "1.1.4"
+    VERSION = "1.2.0"
 
     # Base paths
     BASE_DIR = Path(__file__).parent.parent
@@ -46,6 +46,16 @@ class Config:
 
     # Database
     DATABASE_PATH: Path = BASE_DIR / os.getenv("DATABASE_PATH", "chatbot.db")
+
+    # File upload settings
+    MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", str(20 * 1024 * 1024)))  # 20 MB default
+    MAX_FILES_PER_MESSAGE: int = int(os.getenv("MAX_FILES_PER_MESSAGE", "10"))
+    ALLOWED_FILE_TYPES: set[str] = set(
+        os.getenv(
+            "ALLOWED_FILE_TYPES",
+            "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,application/json,text/csv",
+        ).split(",")
+    )
 
     @classmethod
     def validate(cls) -> list[str]:

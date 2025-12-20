@@ -1,3 +1,4 @@
+import base64
 import json
 from collections.abc import Generator
 from typing import Any
@@ -9,6 +10,36 @@ from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_googl
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
 from src.db.models import db
+from src.utils.images import process_image_files
+
+
+def validate_files(files: list[dict[str, Any]]) -> tuple[bool, str]:
+    """Validate uploaded files against config limits.
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if len(files) > Config.MAX_FILES_PER_MESSAGE:
+        return False, f"Too many files. Maximum is {Config.MAX_FILES_PER_MESSAGE}"
+
+    for file in files:
+        # Check file type
+        file_type = file.get("type", "")
+        if file_type not in Config.ALLOWED_FILE_TYPES:
+            return False, f"File type '{file_type}' is not allowed"
+
+        # Check file size (base64 is ~4/3 larger than binary)
+        data = file.get("data", "")
+        try:
+            decoded_size = len(base64.b64decode(data))
+            if decoded_size > Config.MAX_FILE_SIZE:
+                max_mb = Config.MAX_FILE_SIZE / (1024 * 1024)
+                return False, f"File '{file.get('name', 'unknown')}' exceeds {max_mb:.0f}MB limit"
+        except Exception:
+            return False, "Invalid file data encoding"
+
+    return True, ""
+
 
 api = Blueprint("api", __name__, url_prefix="/api")
 auth = Blueprint("auth", __name__, url_prefix="/auth")
@@ -161,6 +192,7 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
                 "id": m.id,
                 "role": m.role,
                 "content": m.content,
+                "files": m.files,
                 "created_at": m.created_at.isoformat(),
             }
             for m in messages
@@ -211,7 +243,12 @@ def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
 @api.route("/conversations/<conv_id>/chat/batch", methods=["POST"])
 @require_auth
 def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
-    """Send a message and get a complete response (non-streaming)."""
+    """Send a message and get a complete response (non-streaming).
+
+    Accepts JSON body with:
+    - message: str (required) - the text message
+    - files: list[dict] (optional) - array of {name, type, data} file objects
+    """
     user = get_current_user()
     if not user:
         return {"error": "Unauthorized"}, 401
@@ -221,19 +258,29 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         return {"error": "Conversation not found"}, 404
 
     data = request.get_json() or {}
-    message = data.get("message", "").strip()
-    if not message:
-        return {"error": "Message is required"}, 400
+    message_text = data.get("message", "").strip()
+    files = data.get("files", [])
 
-    # Save user message
-    db.add_message(conv_id, "user", message)
+    if not message_text and not files:
+        return {"error": "Message or files required"}, 400
+
+    # Validate files if present
+    if files:
+        is_valid, error = validate_files(files)
+        if not is_valid:
+            return {"error": error}, 400
+        # Generate thumbnails for images
+        files = process_image_files(files)
+
+    # Save user message with separate content and files
+    db.add_message(conv_id, "user", message_text, files=files if files else None)
 
     # Get previous agent state
     previous_state = db.get_agent_state(conv_id)
 
     # Create agent and get response
     agent = ChatAgent(model_name=conv.model)
-    response, new_state = agent.chat_with_state(message, previous_state)
+    response, new_state = agent.chat_with_state(message_text, files, previous_state)
 
     # Save response and state
     assistant_msg = db.add_message(conv_id, "assistant", response)
@@ -241,7 +288,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
 
     # Auto-generate title from first message if still default
     if conv.title == "New Conversation":
-        new_title = generate_title(message, response)
+        new_title = generate_title(message_text, response)
         db.update_conversation(conv_id, user.id, title=new_title)
 
     return {
@@ -255,7 +302,12 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
 @api.route("/conversations/<conv_id>/chat/stream", methods=["POST"])
 @require_auth
 def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
-    """Send a message and stream the response via Server-Sent Events."""
+    """Send a message and stream the response via Server-Sent Events.
+
+    Accepts JSON body with:
+    - message: str (required) - the text message
+    - files: list[dict] (optional) - array of {name, type, data} file objects
+    """
     user = get_current_user()
     if not user:
         return {"error": "Unauthorized"}, 401
@@ -265,17 +317,27 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         return {"error": "Conversation not found"}, 404
 
     data = request.get_json() or {}
-    message = data.get("message", "").strip()
-    if not message:
-        return {"error": "Message is required"}, 400
+    message_text = data.get("message", "").strip()
+    files = data.get("files", [])
 
-    # Save user message
-    db.add_message(conv_id, "user", message)
+    if not message_text and not files:
+        return {"error": "Message or files required"}, 400
+
+    # Validate files if present
+    if files:
+        is_valid, error = validate_files(files)
+        if not is_valid:
+            return {"error": error}, 400
+        # Generate thumbnails for images
+        files = process_image_files(files)
+
+    # Save user message with separate content and files
+    db.add_message(conv_id, "user", message_text, files=files if files else None)
 
     # Get conversation history for context
     messages = db.get_messages(conv_id)
     history = [
-        {"role": m.role, "content": m.content} for m in messages[:-1]
+        {"role": m.role, "content": m.content, "files": m.files} for m in messages[:-1]
     ]  # Exclude the just-added message
 
     def generate() -> Generator[str, None, None]:
@@ -284,7 +346,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         full_response = ""
 
         try:
-            for token in agent.stream_chat(message, history):
+            for token in agent.stream_chat(message_text, files, history):
                 full_response += token
                 yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
 
@@ -293,7 +355,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
 
             # Auto-generate title from first message if still default
             if conv.title == "New Conversation":
-                new_title = generate_title(message, full_response)
+                new_title = generate_title(message_text, full_response)
                 db.update_conversation(conv_id, user.id, title=new_title)
 
             yield f"data: {json.dumps({'type': 'done', 'id': assistant_msg.id, 'created_at': assistant_msg.created_at.isoformat()})}\n\n"
@@ -326,3 +388,67 @@ def list_models() -> dict[str, Any]:
         ],
         "default": Config.DEFAULT_MODEL,
     }
+
+
+# ============================================================================
+# Config Routes
+# ============================================================================
+
+
+@api.route("/config/upload", methods=["GET"])
+@require_auth
+def get_upload_config() -> dict[str, Any]:
+    """Get file upload configuration for frontend."""
+    return {
+        "maxFileSize": Config.MAX_FILE_SIZE,
+        "maxFilesPerMessage": Config.MAX_FILES_PER_MESSAGE,
+        "allowedFileTypes": list(Config.ALLOWED_FILE_TYPES),
+    }
+
+
+# ============================================================================
+# Image Routes
+# ============================================================================
+
+
+@api.route("/messages/<message_id>/files/<int:file_index>", methods=["GET"])
+@require_auth
+def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[str, str], int]:
+    """Get a full-size file from a message.
+
+    Returns the file as binary data with appropriate content-type header.
+    """
+    user = get_current_user()
+    if not user:
+        return {"error": "Unauthorized"}, 401
+
+    # Get the message
+    message = db.get_message_by_id(message_id)
+    if not message:
+        return {"error": "Message not found"}, 404
+
+    # Verify user owns the conversation
+    conv = db.get_conversation(message.conversation_id, user.id)
+    if not conv:
+        return {"error": "Not authorized"}, 403
+
+    # Get the file
+    if not message.files or file_index >= len(message.files):
+        return {"error": "File not found"}, 404
+
+    file = message.files[file_index]
+    file_data = file.get("data", "")
+    file_type = file.get("type", "application/octet-stream")
+
+    # Decode base64 and return as binary
+    try:
+        binary_data = base64.b64decode(file_data)
+        return Response(
+            binary_data,
+            mimetype=file_type,
+            headers={
+                "Cache-Control": "private, max-age=31536000",  # Cache for 1 year
+            },
+        )
+    except Exception:
+        return {"error": "Invalid file data"}, 500
