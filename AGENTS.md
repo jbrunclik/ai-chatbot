@@ -74,6 +74,7 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - Conventional Commits: `type(scope): description`
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 - Run `make lint` before committing
+- **Bump `Config.VERSION`** in [config.py](src/config.py) before committing frontend changes (cache busting)
 - Frontend: ES modules, no build step
 
 ## Common Tasks

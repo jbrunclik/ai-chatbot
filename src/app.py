@@ -14,10 +14,16 @@ def create_app() -> Flask:
     app.register_blueprint(api)
     app.register_blueprint(auth)
 
-    # Serve index.html at root
+    # Serve index.html at root with version for cache busting
     @app.route("/")
     def index() -> Response:
-        return send_from_directory(app.static_folder or "static", "index.html")
+        static_folder = app.static_folder or "static"
+        with open(f"{static_folder}/index.html") as f:
+            html = f.read()
+        # Inject version query param for cache busting
+        html = html.replace('.css"', f'.css?v={Config.VERSION}"')
+        html = html.replace('.js"', f'.js?v={Config.VERSION}"')
+        return Response(html, mimetype="text/html")
 
     # Serve static files
     @app.route("/<path:path>")
