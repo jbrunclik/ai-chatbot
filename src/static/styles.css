@@ -34,6 +34,7 @@ html, body {
     overflow: hidden;
 }
 
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background-color: var(--bg-primary);
@@ -44,8 +45,9 @@ body {
 /* App Layout */
 #app {
     display: flex;
-    height: 100vh;
-    width: 100vw;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
 }
 
 /* Sidebar */
@@ -56,6 +58,8 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    padding-top: env(safe-area-inset-top, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .sidebar-header {
@@ -155,12 +159,13 @@ body {
 /* Mobile Header */
 .mobile-header {
     display: none;
-    height: var(--header-height);
+    min-height: var(--header-height);
     padding: 0 16px;
     background-color: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
 }
 
 .mobile-header span {
@@ -304,6 +309,7 @@ body {
 /* Input Area */
 .input-area {
     padding: 16px 24px 24px;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
     background-color: var(--bg-primary);
 }
 
