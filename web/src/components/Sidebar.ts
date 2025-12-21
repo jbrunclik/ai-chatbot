@@ -2,6 +2,7 @@ import { escapeHtml, getElementById } from '../utils/dom';
 import { renderUserAvatarHtml } from '../utils/avatar';
 import { DELETE_ICON, LOGOUT_ICON } from '../utils/icons';
 import { useStore } from '../state/store';
+import { DEFAULT_CONVERSATION_TITLE } from '../types/api';
 import type { Conversation } from '../types/api';
 
 /**
@@ -41,7 +42,7 @@ export function renderConversationsList(): void {
  * Render a single conversation item
  */
 function renderConversationItem(conv: Conversation, isActive: boolean): string {
-  const title = escapeHtml(conv.title || 'New Conversation');
+  const title = escapeHtml(conv.title || DEFAULT_CONVERSATION_TITLE);
 
   return `
     <div class="conversation-item-wrapper ${isActive ? 'active' : ''}" data-conv-id="${conv.id}">
