@@ -7,7 +7,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - Chat with Google Gemini AI models (Pro and Flash)
 - **Streaming responses**: Real-time token-by-token display (toggleable)
 - **File uploads**: Images, PDFs, and text files with multimodal AI analysis
-- **Image lightbox**: Click thumbnails to view full-size images, with on-demand thumbnail loading
+- **Image lightbox**: Click thumbnails to view full-size images, with loading indicator and on-demand thumbnail loading
 - **Web tools**: Real-time web search (DuckDuckGo) and URL fetching
 - Multiple conversations with history
 - Model selection (Gemini 3 Pro for complex tasks, Flash for speed)

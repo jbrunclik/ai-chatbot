@@ -100,6 +100,14 @@ function renderAppShell(): string {
 
     <!-- Lightbox -->
     <div id="lightbox" class="lightbox hidden">
+      <div class="lightbox-loader">
+        <div class="loading-dots">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <p>Loading image...</p>
+      </div>
       <div class="lightbox-container">
         <button class="lightbox-close" aria-label="Close">
           ${CLOSE_ICON}
