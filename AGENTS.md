@@ -237,3 +237,15 @@ When I correct Claude's approach, the reasoning is documented here to prevent re
 **Preference**: Centralize SVG icons in [icons.ts](web/src/utils/icons.ts)
 **Context**: Prevents duplication across components, makes icons easy to find and update
 **Avoid**: Inline SVG in template strings (import from icons.ts instead)
+
+### Constants
+
+**Preference**: Use `DEFAULT_CONVERSATION_TITLE` constant from [api.ts](web/src/types/api.ts)
+**Context**: Avoids magic strings scattered across the codebase
+**Avoid**: Hardcoding `'New Conversation'` directly in code
+
+### Conversation Creation
+
+**Pattern**: Lazy conversation creation - conversations are created locally with a `temp-` prefixed ID, only persisted to DB on first message
+**Location**: [main.ts](web/src/main.ts) - `createConversation()`, `sendMessage()`, `isTempConversation()`
+**Rationale**: Prevents empty conversations from polluting the database when users click "New Chat" but don't send any messages

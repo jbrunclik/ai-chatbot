@@ -1,3 +1,6 @@
+// Constants
+export const DEFAULT_CONVERSATION_TITLE = 'New Conversation';
+
 // User types
 export interface User {
   id: string;
