@@ -1228,6 +1228,99 @@ body {
     height: 20px;
 }
 
+/* Voice Input Button */
+.btn-voice {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+    flex-shrink: 0;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.btn-voice:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.btn-voice svg {
+    width: 20px;
+    height: 20px;
+}
+
+.btn-voice.recording {
+    color: var(--error);
+    animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+.btn-voice.recording:hover {
+    color: var(--error);
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+.btn-voice.hidden {
+    display: none;
+}
+
+@keyframes pulse-recording {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Voice Language Selector Popup - matches model dropdown styling */
+.voice-lang-selector {
+    position: fixed;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+    min-width: 160px;
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.voice-lang-option {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.voice-lang-option:first-child {
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+.voice-lang-option:last-child {
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+}
+
+.voice-lang-option:hover {
+    background-color: var(--bg-hover);
+}
+
+.voice-lang-option.selected {
+    background-color: var(--bg-tertiary);
+}
+
 /* File Preview Area (above input) */
 .file-preview {
     display: flex;

@@ -48,6 +48,7 @@ ai-chatbot/
 │       │   ├── MessageInput.ts   # Input area, file preview
 │       │   ├── ModelSelector.ts  # Model dropdown
 │       │   ├── FileUpload.ts     # File handling, base64
+│       │   ├── VoiceInput.ts     # Speech-to-text input
 │       │   └── Lightbox.ts       # Image viewer
 │       ├── gestures/swipe.ts     # Touch handlers
 │       ├── utils/
@@ -131,6 +132,18 @@ Uses Google Identity Services (GIS) for client-side authentication:
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 - Run `make lint` before committing
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
+
+## Voice Input
+
+Voice input uses the Web Speech API (`SpeechRecognition`) in [VoiceInput.ts](web/src/components/VoiceInput.ts):
+
+- **Chrome/Edge**: Uses Google's cloud servers (requires internet, may fail with `network` error behind VPNs/firewalls)
+- **Safari (iOS 14.5+/macOS)**: Uses on-device Siri speech recognition (works offline)
+- **Firefox**: Not supported (button is hidden)
+
+The button shows a pulsing red indicator while recording. Transcribed text is appended to the textarea in real-time.
+
+**Language selection**: Long-press (500ms) on the microphone button to open a language selector popup. Languages are sourced from `navigator.languages` and the selected language is persisted to localStorage.
 
 ## Touch Gestures
 
