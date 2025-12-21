@@ -355,6 +355,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    position: relative;
 }
 
 .welcome-message {
@@ -820,6 +821,34 @@ body {
     40% { transform: scale(1); }
 }
 
+/* Conversation loading overlay */
+.conversation-loader {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-primary);
+    z-index: 10;
+}
+
+.conversation-loader-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.conversation-loader-content .loading {
+    justify-content: center;
+}
+
+.conversation-loader-content p {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    margin: 0;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
     width: 8px;
@@ -1040,11 +1069,36 @@ body {
     border-radius: var(--radius-sm);
     display: block;
     cursor: pointer;
-    transition: transform 0.15s;
+    transition: transform 0.15s, opacity 0.3s;
 }
 
 .message-attachment-image:hover {
     transform: scale(1.02);
+}
+
+.message-attachment-image.thumbnail-loading {
+    position: relative;
+    background-color: var(--bg-tertiary);
+}
+
+.message-attachment-image.thumbnail-loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--text-muted);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: thumbnail-spin 0.8s linear infinite;
+}
+
+@keyframes thumbnail-spin {
+    to {
+        transform: translate(-50%, -50%) rotate(360deg);
+    }
 }
 
 .message-attachment-file {

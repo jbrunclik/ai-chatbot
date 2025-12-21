@@ -100,6 +100,23 @@ When working on mobile/PWA features, beware of these iOS Safari issues:
 
 3. **PWA caching is aggressive** - Users may need to remove and re-add the app to home screen to see changes. Bump `Config.VERSION` for cache busting.
 
+## Performance Optimizations
+
+### Conversation Loading
+- **Optimized payload**: `/api/conversations/<conv_id>` only sends file metadata (name, type, messageId, fileIndex), not thumbnails or full file data
+- **Thumbnails on demand**: Thumbnails are fetched via `/api/messages/<message_id>/files/<file_index>/thumbnail` when images come into view
+- **Full files on demand**: Full files are fetched via `/api/messages/<message_id>/files/<file_index>` when needed (lightbox, downloads)
+- **Lazy loading**: Frontend uses Intersection Observer to load thumbnails in parallel as user scrolls
+- **Parallel fetching**: Up to 6 thumbnails fetch concurrently when images come into viewport
+- **Loading indicators**: Visual feedback during conversation switching and thumbnail loading
+
+### File Handling
+- Thumbnails are generated server-side using Pillow (400x400px max) and stored in the database with messages
+- Frontend prefers thumbnails over full images for display
+- If a thumbnail is missing (e.g., old messages), the full image is fetched from API on-demand when visible
+- Native browser lazy loading (`loading="lazy"`) is used for all images
+- Parallel fetching: Up to 6 missing images fetch concurrently when they come into viewport
+
 ## Common Tasks
 
 ### Add a new API endpoint

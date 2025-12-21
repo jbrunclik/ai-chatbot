@@ -103,8 +103,7 @@ def get_client_id() -> dict[str, str]:
 def me() -> dict[str, dict[str, str | None]]:
     """Get current user info."""
     user = get_current_user()
-    if not user:
-        return {"user": {}}
+    assert user is not None  # Guaranteed by @require_auth
 
     return {
         "user": {
@@ -126,9 +125,7 @@ def me() -> dict[str, dict[str, str | None]]:
 def list_conversations() -> dict[str, list[dict[str, str]]]:
     """List all conversations for the current user."""
     user = get_current_user()
-    if not user:
-        return {"conversations": []}
-
+    assert user is not None  # Guaranteed by @require_auth
     conversations = db.list_conversations(user.id)
     return {
         "conversations": [
@@ -149,9 +146,7 @@ def list_conversations() -> dict[str, list[dict[str, str]]]:
 def create_conversation() -> tuple[dict[str, str], int]:
     """Create a new conversation."""
     user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
-
+    assert user is not None  # Guaranteed by @require_auth
     data = request.get_json() or {}
     model = data.get("model", Config.DEFAULT_MODEL)
 
@@ -171,32 +166,52 @@ def create_conversation() -> tuple[dict[str, str], int]:
 @api.route("/conversations/<conv_id>", methods=["GET"])
 @require_auth
 def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
-    """Get a conversation with its messages."""
-    user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
+    """Get a conversation with its messages.
 
+    Optimized: Only includes file metadata, not thumbnails or full file data.
+    Thumbnails are fetched on-demand via /api/messages/<message_id>/files/<file_index>/thumbnail.
+    Full files can be fetched via /api/messages/<message_id>/files/<file_index>.
+    """
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
         return {"error": "Conversation not found"}, 404
 
     messages = db.get_messages(conv_id)
+
+    # Optimize file data: only include metadata, not thumbnails or full file data
+    # Thumbnails are fetched on-demand via /api/messages/<message_id>/files/<file_index>/thumbnail
+    optimized_messages = []
+    for m in messages:
+        optimized_files = []
+        if m.files:
+            for idx, file in enumerate(m.files):
+                optimized_file = {
+                    "name": file.get("name", ""),
+                    "type": file.get("type", ""),
+                    "messageId": m.id,
+                    "fileIndex": idx,
+                }
+                optimized_files.append(optimized_file)
+
+        optimized_messages.append(
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "files": optimized_files,
+                "created_at": m.created_at.isoformat(),
+            }
+        )
+
     return {
         "id": conv.id,
         "title": conv.title,
         "model": conv.model,
         "created_at": conv.created_at.isoformat(),
         "updated_at": conv.updated_at.isoformat(),
-        "messages": [
-            {
-                "id": m.id,
-                "role": m.role,
-                "content": m.content,
-                "files": m.files,
-                "created_at": m.created_at.isoformat(),
-            }
-            for m in messages
-        ],
+        "messages": optimized_messages,
     }, 200
 
 
@@ -205,9 +220,7 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
 def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
     """Update a conversation (title, model)."""
     user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
-
+    assert user is not None  # Guaranteed by @require_auth
     data = request.get_json() or {}
     title = data.get("title")
     model = data.get("model")
@@ -226,8 +239,7 @@ def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
 def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
     """Delete a conversation."""
     user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
+    assert user is not None  # Guaranteed by @require_auth
 
     if not db.delete_conversation(conv_id, user.id):
         return {"error": "Conversation not found"}, 404
@@ -250,9 +262,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     - files: list[dict] (optional) - array of {name, type, data} file objects
     """
     user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
-
+    assert user is not None  # Guaranteed by @require_auth
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
         return {"error": "Conversation not found"}, 404
@@ -309,9 +319,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     - files: list[dict] (optional) - array of {name, type, data} file objects
     """
     user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
-
+    assert user is not None  # Guaranteed by @require_auth
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
         return {"error": "Conversation not found"}, 404
@@ -411,6 +419,74 @@ def get_upload_config() -> dict[str, Any]:
 # ============================================================================
 
 
+@api.route("/messages/<message_id>/files/<int:file_index>/thumbnail", methods=["GET"])
+@require_auth
+def get_message_thumbnail(
+    message_id: str, file_index: int
+) -> Response | tuple[dict[str, str], int]:
+    """Get a thumbnail for an image file from a message.
+
+    Returns the thumbnail as binary data with appropriate content-type header.
+    Falls back to full image if thumbnail doesn't exist.
+    """
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
+
+    # Get the message
+    message = db.get_message_by_id(message_id)
+    if not message:
+        return {"error": "Message not found"}, 404
+
+    # Verify user owns the conversation
+    conv = db.get_conversation(message.conversation_id, user.id)
+    if not conv:
+        return {"error": "Not authorized"}, 403
+
+    # Get the file
+    if not message.files or file_index >= len(message.files):
+        return {"error": "File not found"}, 404
+
+    file = message.files[file_index]
+    file_type = file.get("type", "application/octet-stream")
+
+    # Check if it's an image
+    if not file_type.startswith("image/"):
+        return {"error": "File is not an image"}, 400
+
+    # Prefer thumbnail, fall back to full image if thumbnail doesn't exist
+    thumbnail_data = file.get("thumbnail")
+    if thumbnail_data:
+        try:
+            binary_data = base64.b64decode(thumbnail_data)
+            return Response(
+                binary_data,
+                mimetype=file_type,
+                headers={
+                    "Cache-Control": "private, max-age=31536000",  # Cache for 1 year
+                },
+            )
+        except Exception:
+            # Fall through to full image
+            pass
+
+    # Fall back to full image if no thumbnail
+    file_data = file.get("data", "")
+    if not file_data:
+        return {"error": "Image data not found"}, 404
+
+    try:
+        binary_data = base64.b64decode(file_data)
+        return Response(
+            binary_data,
+            mimetype=file_type,
+            headers={
+                "Cache-Control": "private, max-age=31536000",
+            },
+        )
+    except Exception:
+        return {"error": "Invalid image data"}, 500
+
+
 @api.route("/messages/<message_id>/files/<int:file_index>", methods=["GET"])
 @require_auth
 def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[str, str], int]:
@@ -419,8 +495,7 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
     Returns the file as binary data with appropriate content-type header.
     """
     user = get_current_user()
-    if not user:
-        return {"error": "Unauthorized"}, 401
+    assert user is not None  # Guaranteed by @require_auth
 
     # Get the message
     message = db.get_message_by_id(message_id)
