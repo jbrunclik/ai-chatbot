@@ -130,13 +130,18 @@ export const chat = {
   async sendBatch(
     conversationId: string,
     message: string,
-    files?: FileUpload[]
+    files?: FileUpload[],
+    forceTools?: string[]
   ): Promise<ChatResponse> {
     return request<ChatResponse>(
       `/api/conversations/${conversationId}/chat/batch`,
       {
         method: 'POST',
-        body: JSON.stringify({ message, files }),
+        body: JSON.stringify({
+          message,
+          files,
+          force_tools: forceTools?.length ? forceTools : undefined,
+        }),
       }
     );
   },
@@ -144,7 +149,8 @@ export const chat = {
   async *stream(
     conversationId: string,
     message: string,
-    files?: FileUpload[]
+    files?: FileUpload[],
+    forceTools?: string[]
   ): AsyncGenerator<StreamEvent> {
     const token = getToken();
 
@@ -156,7 +162,11 @@ export const chat = {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ message, files }),
+        body: JSON.stringify({
+          message,
+          files,
+          force_tools: forceTools?.length ? forceTools : undefined,
+        }),
       }
     );
 

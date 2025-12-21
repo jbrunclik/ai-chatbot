@@ -133,6 +133,31 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - Run `make lint` before committing
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
 
+## Input Toolbar
+
+The input area has a toolbar row above the textarea with controls:
+
+```
+[Model dropdown] [Stream] [Search]              [Mic] [Attach]
+┌────────────────────────────────────────────────────────────┐
+│ Textarea                                          [Send]   │
+└────────────────────────────────────────────────────────────┘
+```
+
+- **Model selector**: Dropdown to switch between Gemini models
+- **Stream toggle**: Enable/disable streaming responses (persisted to localStorage)
+- **Search toggle**: One-shot button to force `web_search` tool for the next message only
+- **Mic**: Voice input (see Voice Input section below)
+- **Attach**: File upload
+
+### Force Tools System
+
+The `forceTools` state in Zustand allows forcing specific tools to be used. Currently only `web_search` is exposed via UI, but the system supports any tool name. The force tools instruction is added to the system prompt when tools are specified.
+
+- Frontend: `store.forceTools: string[]` with `toggleForceTool(tool)` and `clearForceTools()`
+- Backend: `force_tools` parameter in `/chat/batch` and `/chat/stream` endpoints
+- Agent: `get_force_tools_prompt()` in [chat_agent.py](src/agent/chat_agent.py)
+
 ## Voice Input
 
 Voice input uses the Web Speech API (`SpeechRecognition`) in [VoiceInput.ts](web/src/components/VoiceInput.ts):

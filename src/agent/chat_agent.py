@@ -101,13 +101,42 @@ Your training data has a cutoff date. For anything after that, use web_search.
 When citing information from searches, mention the source."""
 
 
-def get_system_prompt(with_tools: bool = True) -> str:
-    """Build the system prompt, optionally including tool instructions."""
+def get_force_tools_prompt(force_tools: list[str]) -> str:
+    """Build a prompt instructing the LLM to use specific tools.
+
+    Args:
+        force_tools: List of tool names to force (e.g., ["web_search"])
+
+    Returns:
+        A formatted instruction string
+    """
+    tool_list = "\n".join(f"- {tool}" for tool in force_tools)
+    return f"""
+# IMPORTANT: Mandatory Tool Usage
+Before responding to this query, you MUST use the following tools:
+{tool_list}
+
+Call each required tool first, then provide your response based on the results. Do not skip this step."""
+
+
+def get_system_prompt(with_tools: bool = True, force_tools: list[str] | None = None) -> str:
+    """Build the system prompt, optionally including tool instructions.
+
+    Args:
+        with_tools: Whether tools are available
+        force_tools: List of tool names that must be used (e.g., ["web_search", "image_generation"])
+    """
     date_context = f"\n\nCurrent date and time: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
+    prompt = BASE_SYSTEM_PROMPT
     if with_tools and TOOLS:
-        return BASE_SYSTEM_PROMPT + TOOLS_SYSTEM_PROMPT + date_context
-    return BASE_SYSTEM_PROMPT + date_context
+        prompt += TOOLS_SYSTEM_PROMPT
+
+    # Add force tools instruction if specified
+    if force_tools:
+        prompt += get_force_tools_prompt(force_tools)
+
+    return prompt + date_context
 
 
 def extract_text_content(content: str | list[Any] | dict[str, Any]) -> str:
@@ -292,12 +321,15 @@ class ChatAgent:
         text: str,
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
+        force_tools: list[str] | None = None,
     ) -> list[BaseMessage]:
         """Build the messages list from history and user message."""
         messages: list[BaseMessage] = []
 
         # Always add system prompt (with tool instructions if tools are enabled)
-        messages.append(SystemMessage(content=get_system_prompt(self.with_tools)))
+        messages.append(
+            SystemMessage(content=get_system_prompt(self.with_tools, force_tools=force_tools))
+        )
 
         if history:
             for msg in history:
@@ -351,6 +383,7 @@ class ChatAgent:
         text: str,
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
+        force_tools: list[str] | None = None,
     ) -> Generator[str, None, None]:
         """
         Stream response tokens using LangGraph's stream method.
@@ -359,11 +392,12 @@ class ChatAgent:
             text: The user's message text
             files: Optional list of file attachments
             history: Optional list of previous messages with 'role', 'content', and 'files' keys
+            force_tools: Optional list of tool names that must be used
 
         Yields:
             Text tokens as they are generated
         """
-        messages = self._build_messages(text, files, history)
+        messages = self._build_messages(text, files, history, force_tools=force_tools)
 
         # Stream the graph execution with messages mode for token-level streaming
         for event in self.graph.stream(
@@ -388,6 +422,7 @@ class ChatAgent:
         text: str,
         files: list[dict[str, Any]] | None = None,
         previous_state: dict[str, Any] | None = None,
+        force_tools: list[str] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """
         Chat with persistent state for multi-turn agent workflows.
@@ -396,6 +431,7 @@ class ChatAgent:
             text: The user's message text
             files: Optional list of file attachments
             previous_state: Optional previous agent state
+            force_tools: Optional list of tool names that must be used
 
         Returns:
             Tuple of (response text, new state for persistence)
@@ -404,7 +440,9 @@ class ChatAgent:
         messages: list[BaseMessage] = []
 
         # Always add system prompt (with tool instructions if tools are enabled)
-        messages.append(SystemMessage(content=get_system_prompt(self.with_tools)))
+        messages.append(
+            SystemMessage(content=get_system_prompt(self.with_tools, force_tools=force_tools))
+        )
 
         if previous_state and "messages" in previous_state:
             for msg_data in previous_state["messages"]:

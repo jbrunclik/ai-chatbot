@@ -26,6 +26,7 @@ interface AppState {
   isLoading: boolean;
   isSidebarOpen: boolean;
   streamingEnabled: boolean;
+  forceTools: string[];
 
   // File upload
   pendingFiles: FileUpload[];
@@ -52,6 +53,8 @@ interface AppState {
   toggleSidebar: () => void;
   closeSidebar: () => void;
   setStreamingEnabled: (enabled: boolean) => void;
+  toggleForceTool: (tool: string) => void;
+  clearForceTools: () => void;
 
   // Actions - Files
   addPendingFile: (file: FileUpload) => void;
@@ -90,6 +93,7 @@ export const useStore = create<AppState>()(
       isLoading: false,
       isSidebarOpen: false,
       streamingEnabled: true,
+      forceTools: [],
       pendingFiles: [],
       uploadConfig: DEFAULT_UPLOAD_CONFIG,
 
@@ -140,6 +144,13 @@ export const useStore = create<AppState>()(
         set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
       closeSidebar: () => set({ isSidebarOpen: false }),
       setStreamingEnabled: (streamingEnabled) => set({ streamingEnabled }),
+      toggleForceTool: (tool) =>
+        set((state) => ({
+          forceTools: state.forceTools.includes(tool)
+            ? state.forceTools.filter((t) => t !== tool)
+            : [...state.forceTools, tool],
+        })),
+      clearForceTools: () => set({ forceTools: [] }),
 
       // File actions
       addPendingFile: (file) =>

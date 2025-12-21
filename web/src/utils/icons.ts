@@ -122,3 +122,39 @@ export const MICROPHONE_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="cur
 export const STOP_ICON = `<svg viewBox="0 0 24 24" fill="currentColor">
   <rect x="6" y="6" width="12" height="12" rx="1"/>
 </svg>`;
+
+/**
+ * Search/magnifying glass icon (for web search)
+ */
+export const SEARCH_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="11" cy="11" r="8"/>
+  <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+</svg>`;
+
+/**
+ * Stream icon (for streaming toggle - signal/broadcast)
+ */
+export const STREAM_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+  <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+  <circle cx="12" cy="12" r="2" fill="currentColor"/>
+  <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+  <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1"/>
+</svg>`;
+
+/**
+ * Stream off icon (streaming disabled)
+ */
+export const STREAM_OFF_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="2" fill="currentColor"/>
+  <line x1="4" y1="4" x2="20" y2="20"/>
+</svg>`;
+
+/**
+ * Plus icon in circle (for new chat button)
+ */
+export const PLUS_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="10"/>
+  <line x1="12" y1="8" x2="12" y2="16"/>
+  <line x1="8" y1="12" x2="16" y2="12"/>
+</svg>`;

@@ -777,7 +777,6 @@ body {
 
 .model-selector {
     position: relative;
-    margin-bottom: 8px;
 }
 
 .model-selector-btn {
@@ -865,6 +864,56 @@ body {
     margin-top: 2px;
 }
 
+/* Input Toolbar */
+.input-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 8px;
+}
+
+.toolbar-left,
+.toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-toolbar {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.btn-toolbar:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.btn-toolbar svg {
+    width: 18px;
+    height: 18px;
+}
+
+.btn-toolbar.active {
+    color: var(--accent);
+}
+
+.btn-toolbar.active:hover {
+    background-color: rgba(99, 102, 241, 0.15);
+    color: var(--accent-hover);
+}
+
+/* Send button alignment in simplified input container */
 .input-container {
     display: flex;
     gap: 12px;
@@ -872,7 +921,7 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 8px 16px;
-    align-items: center;
+    align-items: flex-end;
 }
 
 #message-input {
@@ -910,6 +959,16 @@ body {
     background-color: var(--accent);
     color: white;
     width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-primary svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
 }
 
 .btn-primary:hover {
@@ -936,6 +995,8 @@ body {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    /* Align with single line of text (textarea has 8px bottom padding, button is 36px, text line is ~24px) */
+    margin-bottom: 2px;
 }
 
 .btn-send svg {
