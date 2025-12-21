@@ -143,7 +143,7 @@ Voice input uses the Web Speech API (`SpeechRecognition`) in [VoiceInput.ts](web
 
 The button shows a pulsing red indicator while recording. Transcribed text is appended to the textarea in real-time.
 
-**Language selection**: Long-press (500ms) on the microphone button to open a language selector popup. Languages are sourced from `navigator.languages` and the selected language is persisted to localStorage.
+**Language selection**: Long-press (500ms) on the microphone button to open a language selector popup. Currently supports English (en-US) and Czech (cs-CZ). The browser's preferred language is shown first if supported. The selected language is persisted to localStorage.
 
 ## Touch Gestures
 
