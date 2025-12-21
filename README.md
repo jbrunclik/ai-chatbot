@@ -70,6 +70,11 @@ ALLOWED_EMAILS=user1@gmail.com,user2@gmail.com
 MAX_FILE_SIZE=20971520              # 20 MB in bytes
 MAX_FILES_PER_MESSAGE=10
 ALLOWED_FILE_TYPES=image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,application/json,text/csv
+
+# Gunicorn settings (optional)
+GUNICORN_WORKERS=2                  # Number of worker processes
+GUNICORN_TIMEOUT=300                # 5 minutes default
+SSE_KEEPALIVE_INTERVAL=15           # Heartbeat interval for streaming
 ```
 
 ### Setting up Google Sign In
@@ -136,6 +141,32 @@ journalctl --user -u ai-chatbot -f
 ```
 
 The systemd service automatically runs `npm install && npm run build` before starting Gunicorn.
+
+### Reverse Proxy (nginx)
+
+If running behind nginx, ensure timeouts are configured to match or exceed `GUNICORN_TIMEOUT`:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8000;
+
+    # Standard proxy headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Timeouts - must match or exceed GUNICORN_TIMEOUT
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 300s;    # Match GUNICORN_TIMEOUT
+    proxy_read_timeout 300s;    # Match GUNICORN_TIMEOUT
+
+    # Disable buffering for streaming responses
+    proxy_buffering off;
+}
+```
+
+The app uses SSE keepalive heartbeats (configurable via `SSE_KEEPALIVE_INTERVAL`) to prevent proxy timeouts during LLM "thinking" phases. For very long operations, increase both `GUNICORN_TIMEOUT` and nginx timeouts.
 
 ## Project Structure
 

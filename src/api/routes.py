@@ -1,5 +1,7 @@
 import base64
 import json
+import queue
+import threading
 from collections.abc import Generator
 from typing import Any
 
@@ -317,6 +319,9 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     Accepts JSON body with:
     - message: str (required) - the text message
     - files: list[dict] (optional) - array of {name, type, data} file objects
+
+    Uses SSE keepalive heartbeats to prevent proxy timeouts during long LLM thinking phases.
+    Keepalives are sent as SSE comments (: keepalive) which clients ignore but proxies see as activity.
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
@@ -349,14 +354,54 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     ]  # Exclude the just-added message
 
     def generate() -> Generator[str, None, None]:
-        """Generator that streams tokens as SSE events."""
+        """Generator that streams tokens as SSE events with keepalive support.
+
+        Uses a separate thread to stream LLM tokens into a queue, while the main
+        generator loop sends keepalives when no tokens are available. This prevents
+        proxy timeouts during the LLM's "thinking" phase before tokens start flowing.
+        """
         agent = ChatAgent(model_name=conv.model)
         full_response = ""
+        token_queue: queue.Queue[str | None | Exception] = queue.Queue()
+        stream_done = threading.Event()
+
+        def stream_tokens() -> None:
+            """Background thread that streams tokens into the queue."""
+            try:
+                for token in agent.stream_chat(message_text, files, history):
+                    token_queue.put(token)
+                token_queue.put(None)  # Signal completion
+            except Exception as e:
+                token_queue.put(e)  # Signal error
+            finally:
+                stream_done.set()
+
+        # Start streaming in background thread
+        stream_thread = threading.Thread(target=stream_tokens, daemon=True)
+        stream_thread.start()
 
         try:
-            for token in agent.stream_chat(message_text, files, history):
-                full_response += token
-                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+            while True:
+                try:
+                    # Wait for token with timeout for keepalive
+                    item = token_queue.get(timeout=Config.SSE_KEEPALIVE_INTERVAL)
+
+                    if item is None:
+                        # Stream completed successfully
+                        break
+                    elif isinstance(item, Exception):
+                        # Error occurred
+                        yield f"data: {json.dumps({'type': 'error', 'message': str(item)})}\n\n"
+                        return
+                    else:
+                        # Got a token
+                        full_response += item
+                        yield f"data: {json.dumps({'type': 'token', 'text': item})}\n\n"
+
+                except queue.Empty:
+                    # No token available, send keepalive comment
+                    # SSE comments start with ":" and are ignored by clients
+                    yield ": keepalive\n\n"
 
             # Save complete response to DB
             assistant_msg = db.add_message(conv_id, "assistant", full_response)

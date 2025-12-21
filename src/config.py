@@ -36,6 +36,9 @@ class Config:
     # Server
     PORT: int = int(os.getenv("PORT", "8000"))
     FLASK_ENV: str = os.getenv("FLASK_ENV", "development")
+    GUNICORN_WORKERS: int = int(os.getenv("GUNICORN_WORKERS", "2"))
+    GUNICORN_TIMEOUT: int = int(os.getenv("GUNICORN_TIMEOUT", "300"))  # 5 minutes default
+    SSE_KEEPALIVE_INTERVAL: int = int(os.getenv("SSE_KEEPALIVE_INTERVAL", "15"))  # seconds
 
     @classmethod
     def is_development(cls) -> bool:
