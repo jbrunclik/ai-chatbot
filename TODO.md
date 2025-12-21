@@ -20,6 +20,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Conversation rename functionality
 - [x] Mobile gesture support (swipe to open sidebar, swipe to delete conversations)
 - [x] **Show message timestamps** - Display message timestamps on hover (locale-aware formatting)
+- [x] **Scroll to bottom button** - Floating button to jump to latest messages when scrolled up
 - [ ] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
 
 ## Phase 3 - Tools & Extensions

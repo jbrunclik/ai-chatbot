@@ -34,6 +34,7 @@ import { initModelSelector, renderModelDropdown } from './components/ModelSelect
 import { initFileUpload, clearPendingFiles, getPendingFiles } from './components/FileUpload';
 import { initLightbox } from './components/Lightbox';
 import { initVoiceInput } from './components/VoiceInput';
+import { initScrollToBottom } from './components/ScrollToBottom';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
 import { getElementById } from './utils/dom';
 import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, PLUS_ICON } from './utils/icons';
@@ -151,6 +152,7 @@ async function init(): Promise<void> {
   initFileUpload();
   initVoiceInput();
   initLightbox();
+  initScrollToBottom();
   setupEventListeners();
   setupTouchGestures();
 

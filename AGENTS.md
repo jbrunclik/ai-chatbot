@@ -49,7 +49,8 @@ ai-chatbot/
 │       │   ├── ModelSelector.ts  # Model dropdown
 │       │   ├── FileUpload.ts     # File handling, base64
 │       │   ├── VoiceInput.ts     # Speech-to-text input
-│       │   └── Lightbox.ts       # Image viewer
+│       │   ├── Lightbox.ts       # Image viewer
+│       │   └── ScrollToBottom.ts # Scroll-to-bottom button
 │       ├── gestures/swipe.ts     # Touch handlers
 │       ├── utils/
 │       │   ├── dom.ts            # DOM helpers, escapeHtml
