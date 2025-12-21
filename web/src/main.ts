@@ -434,7 +434,7 @@ async function sendStreamingMessage(
         fullContent += event.text;
         updateStreamingMessage(messageEl, fullContent);
       } else if (event.type === 'done') {
-        finalizeStreamingMessage(messageEl, event.id);
+        finalizeStreamingMessage(messageEl, event.id, event.created_at);
 
         // Update conversation title if this was the first message
         await refreshConversationTitle(convId);

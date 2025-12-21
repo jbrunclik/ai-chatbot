@@ -7,6 +7,37 @@ import { useStore } from '../state/store';
 import type { Message, FileMetadata } from '../types/api';
 
 /**
+ * Format a timestamp for display using system locale
+ * Shows time for today, "Yesterday HH:MM" for yesterday, or locale date + time for older
+ */
+function formatMessageTime(isoString: string): string {
+  const date = new Date(isoString);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const messageDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+  if (messageDay.getTime() === today.getTime()) {
+    return timeStr;
+  } else if (messageDay.getTime() === yesterday.getTime()) {
+    // Use Intl.RelativeTimeFormat for localized "yesterday"
+    const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+    const yesterdayStr = rtf.formatToParts(-1, 'day').find(p => p.type === 'literal')?.value || 'Yesterday';
+    return `${yesterdayStr} ${timeStr}`;
+  } else {
+    // Full locale-aware date formatting
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+}
+
+/**
  * Render all messages in the container
  */
 export function renderMessages(messages: Message[]): void {
@@ -90,10 +121,12 @@ export function addMessageToUI(
     contentWrapper.appendChild(content);
   }
 
-  // Add message actions (copy button)
+  // Add message actions (timestamp + copy button)
   const actions = document.createElement('div');
   actions.className = 'message-actions';
+  const timeStr = message.created_at ? formatMessageTime(message.created_at) : '';
   actions.innerHTML = `
+    ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
     <button class="message-copy-btn" title="Copy message">
       ${COPY_ICON}
     </button>
@@ -252,7 +285,8 @@ export function updateStreamingMessage(
  */
 export function finalizeStreamingMessage(
   messageEl: HTMLElement,
-  messageId: string
+  messageId: string,
+  createdAt?: string
 ): void {
   messageEl.classList.remove('streaming');
   messageEl.dataset.messageId = messageId;
@@ -267,12 +301,14 @@ export function finalizeStreamingMessage(
     highlightAllCodeBlocks(content as HTMLElement);
   }
 
-  // Add message actions (copy button)
+  // Add message actions (timestamp + copy button)
   const contentWrapper = messageEl.querySelector('.message-content-wrapper');
   if (contentWrapper && !contentWrapper.querySelector('.message-actions')) {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
+    const timeStr = createdAt ? formatMessageTime(createdAt) : '';
     actions.innerHTML = `
+      ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
       <button class="message-copy-btn" title="Copy message">
         ${COPY_ICON}
       </button>
