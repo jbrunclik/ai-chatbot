@@ -7,9 +7,6 @@ load_dotenv()
 
 
 class Config:
-    # App version (bump this to bust static file caches)
-    VERSION = "1.2.5"
-
     # Base paths
     BASE_DIR = Path(__file__).parent.parent
 
@@ -36,13 +33,14 @@ class Config:
         email.strip() for email in os.getenv("ALLOWED_EMAILS", "").split(",") if email.strip()
     ]
 
-    # Local mode (skip auth)
-    LOCAL_MODE: bool = os.getenv("LOCAL_MODE", "false").lower() == "true"
-
     # Server
     PORT: int = int(os.getenv("PORT", "8000"))
     FLASK_ENV: str = os.getenv("FLASK_ENV", "development")
-    DEBUG: bool = FLASK_ENV == "development"
+
+    @classmethod
+    def is_development(cls) -> bool:
+        """Check if running in development mode."""
+        return cls.FLASK_ENV == "development"
 
     # Database
     DATABASE_PATH: Path = BASE_DIR / os.getenv("DATABASE_PATH", "chatbot.db")
@@ -65,13 +63,12 @@ class Config:
         if not cls.GEMINI_API_KEY:
             errors.append("GEMINI_API_KEY is required")
 
-        if not cls.LOCAL_MODE:
+        if not cls.is_development():
             if not cls.GOOGLE_CLIENT_ID:
-                errors.append("GOOGLE_CLIENT_ID is required (or set LOCAL_MODE=true)")
+                errors.append("GOOGLE_CLIENT_ID is required (or set FLASK_ENV=development)")
             if not cls.ALLOWED_EMAILS:
-                errors.append("ALLOWED_EMAILS is required (or set LOCAL_MODE=true)")
-
-        if cls.JWT_SECRET_KEY == "dev-secret-change-me" and not cls.LOCAL_MODE:
-            errors.append("JWT_SECRET_KEY must be set to a secure value in production")
+                errors.append("ALLOWED_EMAILS is required (or set FLASK_ENV=development)")
+            if cls.JWT_SECRET_KEY == "dev-secret-change-me":
+                errors.append("JWT_SECRET_KEY must be set to a secure value in production")
 
         return errors

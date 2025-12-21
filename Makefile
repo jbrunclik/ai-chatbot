@@ -1,4 +1,4 @@
-.PHONY: setup lint lint-fix run test clean deploy
+.PHONY: setup lint lint-fix run dev build test clean deploy
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -6,27 +6,35 @@ PIP := $(VENV)/bin/pip
 RUFF := $(VENV)/bin/ruff
 MYPY := $(VENV)/bin/mypy
 NPM := npm
-ESLINT := npx eslint
 
 setup:
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
-	@if [ ! -d "node_modules" ]; then \
-		$(NPM) install; \
-	fi
+	cd web && $(NPM) install
 	@echo "Setup complete. Activate with: source $(VENV)/bin/activate"
+
+# Development: run Flask and Vite dev server concurrently
+# Uses npx concurrently to manage both processes (Ctrl+C kills both)
+dev:
+	npx concurrently --kill-others --names "flask,vite" \
+		"$(PYTHON) -m src.app" \
+		"cd web && $(NPM) run dev"
+
+# Production build
+build:
+	cd web && $(NPM) run build
 
 lint:
 	$(RUFF) check src/
 	$(RUFF) format --check src/
 	$(MYPY) src/
-	$(ESLINT) src/static/*.js
+	cd web && $(NPM) run typecheck && $(NPM) run lint
 
 lint-fix:
 	$(RUFF) check --fix src/
 	$(RUFF) format src/
-	$(ESLINT) --fix src/static/*.js
+	cd web && $(NPM) run lint:fix
 
 run:
 	$(PYTHON) -m src.app
@@ -39,7 +47,8 @@ clean:
 	rm -rf __pycache__ src/__pycache__ src/**/__pycache__
 	rm -rf .mypy_cache .ruff_cache
 	rm -rf *.egg-info
-	rm -rf node_modules
+	rm -rf web/node_modules
+	rm -rf static/assets
 	find . -type f -name "*.pyc" -delete
 
 deploy:
