@@ -1,6 +1,7 @@
 import { getElementById, autoResizeTextarea } from '../utils/dom';
 import { MICROPHONE_ICON, STOP_ICON } from '../utils/icons';
 import { updateSendButtonState } from './MessageInput';
+import { isTouchDevice } from '../gestures/swipe';
 
 // Language display names
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -66,21 +67,6 @@ function getSpeechRecognition(): new () => SpeechRecognition {
   return window.SpeechRecognition || window.webkitSpeechRecognition;
 }
 
-/**
- * Request microphone permission explicitly
- * This triggers the browser permission prompt in Chrome/Chromium
- */
-async function requestMicrophonePermission(): Promise<boolean> {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Stop all tracks immediately - we just needed to trigger the permission prompt
-    stream.getTracks().forEach(track => track.stop());
-    return true;
-  } catch (error) {
-    console.error('Microphone permission denied:', error);
-    return false;
-  }
-}
 
 /**
  * Get display name for a language code
@@ -168,12 +154,54 @@ function showLanguageSelector(voiceBtn: HTMLButtonElement): void {
     }
     option.textContent = getLanguageDisplayName(lang);
     option.dataset.lang = lang;
+
+    // Click handler for desktop (and fallback for touch)
     option.addEventListener('click', (e) => {
       e.stopPropagation();
       selectLanguage(lang);
       hideLanguageSelector();
     });
     popup.appendChild(option);
+  }
+
+  // Touch devices: handle drag-to-select on the entire document
+  // This allows the user to drag from the mic button into the popup
+  if (isTouchDevice()) {
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      const element = document.elementFromPoint(touch.clientX, touch.clientY);
+      // Update visual highlight
+      popup.querySelectorAll('.voice-lang-option').forEach(opt => {
+        opt.classList.remove('hover');
+      });
+      if (element?.classList.contains('voice-lang-option')) {
+        element.classList.add('hover');
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      // Clean up listeners
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+
+      // Find which option the touch ended on
+      const touch = e.changedTouches[0];
+      const element = document.elementFromPoint(touch.clientX, touch.clientY);
+      if (element?.classList.contains('voice-lang-option')) {
+        e.preventDefault();
+        const selectedLang = (element as HTMLElement).dataset.lang;
+        if (selectedLang) {
+          selectLanguage(selectedLang);
+        }
+        hideLanguageSelector();
+      } else {
+        // Touch ended outside options - just close
+        hideLanguageSelector();
+      }
+    };
+
+    document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    document.addEventListener('touchend', handleTouchEnd);
   }
 
   // Position the popup above the button, aligned to right edge
@@ -365,13 +393,7 @@ export function initVoiceInput(): void {
     if (isRecording) {
       recognition?.stop();
     } else {
-      // Request microphone permission first (triggers browser prompt in Chrome)
-      const hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) {
-        alert('Microphone access denied. Please allow microphone access to use voice input.');
-        return;
-      }
-
+      // SpeechRecognition will automatically prompt for microphone permission when start() is called
       try {
         recognition?.start();
       } catch (error) {
@@ -385,6 +407,11 @@ export function initVoiceInput(): void {
   voiceBtn.addEventListener('mousedown', startLongPress);
   voiceBtn.addEventListener('mouseup', cancelLongPress);
   voiceBtn.addEventListener('mouseleave', cancelLongPress);
+
+  // Prevent context menu on long press (desktop)
+  voiceBtn.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+  });
 
   // Touch events for mobile
   voiceBtn.addEventListener('touchstart', startLongPress, { passive: true });

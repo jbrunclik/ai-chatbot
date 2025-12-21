@@ -1313,7 +1313,8 @@ body {
     border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
 
-.voice-lang-option:hover {
+.voice-lang-option:hover,
+.voice-lang-option.hover {
     background-color: var(--bg-hover);
 }
 
