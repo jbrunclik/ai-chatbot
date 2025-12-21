@@ -19,7 +19,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] Conversation delete functionality
 - [ ] Conversation rename functionality
 - [x] Mobile gesture support (swipe to open sidebar, swipe to delete conversations)
-- [ ] **Show conversation metadata** - Display dates (created, last updated) in sidebar conversation list
+- [x] **Show message timestamps** - Display message timestamps on hover (locale-aware formatting)
 - [ ] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
 
 ## Phase 3 - Tools & Extensions

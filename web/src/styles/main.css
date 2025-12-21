@@ -656,9 +656,10 @@ body {
     height: 16px;
 }
 
-/* Message Actions (copy button) */
+/* Message Actions (timestamp + copy button) */
 .message-actions {
     display: flex;
+    align-items: center;
     gap: 8px;
     opacity: 0;
     transition: opacity 0.15s;
@@ -673,6 +674,12 @@ body {
     .message-actions {
         opacity: 0.6;
     }
+}
+
+.message-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
 }
 
 .message-copy-btn {
