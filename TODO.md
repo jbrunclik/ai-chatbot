@@ -57,45 +57,67 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Docker image and docker-compose setup
 
 ## Technical Debt
+
+### 🔴 Critical / High Priority
+- [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
+- [ ] **Add comprehensive test suite** - No tests exist. Create `tests/` directory with unit, integration, and e2e tests for auth, API, agent, and frontend.
+- [ ] **Catch specific exceptions** - Multiple bare `except Exception:` handlers in `chat_agent.py`, `routes.py`, and `images.py`. Catch specific exceptions instead.
+
+### 🟠 Security
+- [ ] **Add server-side file type validation** - File upload relies on client MIME type. Add magic bytes verification using `python-magic`.
+- [ ] **Add request size limits** - Enforce request body size limits in Flask to prevent DoS
+- [ ] **Improve JWT token handling** - Add token refresh mechanism instead of fixed expiration; consider enforcing minimum secret length (32+ chars)
+- [ ] **Add CORS configuration** - Explicitly configure CORS if needed for cross-origin requests
+
+### 🟡 Code Quality
 - [x] Add proper database migrations (yoyo-migrations)
 - [ ] Add request validation (pydantic or marshmallow)
 - [ ] Consider async Flask (quart) for better concurrency
 - [ ] Add OpenAPI/Swagger documentation
 - [ ] **Store files and thumbnails outside DB** - Move file data and thumbnails to object storage (S3, MinIO, etc.) for better scalability and performance
 - [ ] **Split JavaScript into modules** - Break up monolithic app.js into multiple files with a lightweight build system (e.g., esbuild, Vite, or Rollup)
-- [x] **Remove test delay code** - Remove `?delay=` parameter handling from production code in routes.py
-- [ ] **Add structured logging** - Replace print statements with proper logging framework (Python logging module)
+- [ ] **Add structured logging** - Replace print statements with proper logging framework (Python logging module). Currently `images.py:69` uses `print()`.
+- [ ] **Error handling standardization** - Create consistent error response format across all API endpoints
+- [ ] **Frontend error boundaries** - Add error handling for failed API calls with retry logic. Also wrap `response.json()` in try-catch.
+- [ ] **Remove inline onclick handlers** - Replace inline onclick in HTML with event delegation (model selector in `app.js:961` still uses it)
+- [ ] **Add request timeout handling** - Handle timeouts for long-running Gemini API calls gracefully
+- [ ] **TypeScript migration** - Consider migrating frontend to TypeScript for better type safety
+- [ ] **Add JSDoc type annotations** - Add JSDoc comments to JavaScript functions for IDE support
+- [ ] **Extract magic numbers to constants** - e.g., `SWIPE_THRESHOLD = 60` in app.js, timeout values in tools.py
+- [ ] **Remove console.log statements** - 16 console.log/error/warn statements in app.js; implement structured frontend logging
+- [ ] **Reduce innerHTML usage** - Heavy reliance on innerHTML; prefer textContent and createElement where possible
+
+### 🟢 Database
 - [ ] **Database connection pooling** - Consider connection pooling for SQLite (though SQLite has limitations)
 - [ ] **Add database indexes** - Add indexes on frequently queried columns (conversations.user_id, messages.conversation_id, etc.)
-- [ ] **Error handling standardization** - Create consistent error response format across all API endpoints
-- [ ] **Frontend error boundaries** - Add error handling for failed API calls with retry logic
-- [ ] **Remove inline onclick handlers** - Replace inline onclick in HTML with event delegation (already partially done, but model selector still uses it)
-- [ ] **Add request timeout handling** - Handle timeouts for long-running Gemini API calls gracefully
-- [ ] **Pagination for conversations** - Add pagination to conversations list endpoint for users with many conversations
 - [ ] **Add database query optimization** - Review and optimize N+1 query patterns (e.g., loading conversations with message counts)
+- [ ] **Pagination for conversations** - Add pagination to conversations list endpoint for users with many conversations
+- [ ] **Add database backup automation** - Automated daily backups of SQLite database
+- [ ] **Add database vacuum** - Periodic SQLite VACUUM to reclaim space and optimize database
+- [ ] **Add database query logging** - Log slow queries for optimization (in development/debug mode)
+- [ ] **Add database connectivity check** - Verify database is accessible at startup with clear error message
+
+### 🔵 Frontend Performance & UX
 - [ ] **Frontend bundle optimization** - Bundle and minify JS/CSS instead of loading from CDN (marked.js, highlight.js)
 - [ ] **Add service worker** - Implement service worker for offline support and better caching
-- [ ] **TypeScript migration** - Consider migrating frontend to TypeScript for better type safety
 - [ ] **Add file upload progress** - Show upload progress indicator for large file uploads
 - [ ] **Accessibility improvements** - Add ARIA labels, improve keyboard navigation, ensure screen reader compatibility
-- [ ] **Add request/response logging middleware** - Log all API requests and responses (with sensitive data redaction)
+- [ ] **Frontend state management** - Consider using a state management library (Zustand, Redux) instead of global state object
+- [ ] **Frontend code splitting** - Split frontend code into chunks for better initial load performance
+- [ ] **Frontend error reporting** - Add error reporting service (Sentry, Rollbar) for production error tracking
+- [ ] **Frontend performance monitoring** - Add performance monitoring (Web Vitals, custom metrics)
+- [ ] **Frontend bundle analysis** - Analyze bundle size and identify optimization opportunities
+
+### ⚙️ Configuration & Operations
 - [ ] **Environment variable validation** - Validate all required env vars at startup with clear error messages
 - [ ] **Add health check endpoint** - `/health` endpoint for monitoring and load balancer checks
-- [ ] **Frontend state management** - Consider using a state management library (Zustand, Redux) instead of global state object
+- [ ] **Add request/response logging middleware** - Log all API requests and responses (with sensitive data redaction)
 - [ ] **Add request ID tracking** - Include request IDs in logs and error responses for easier debugging
-- [ ] **Optimize image processing** - Consider async/background processing for thumbnail generation on large images
-- [ ] **Add database backup automation** - Automated daily backups of SQLite database
-- [ ] **Frontend code splitting** - Split frontend code into chunks for better initial load performance
 - [ ] **Add API response compression** - Enable gzip compression for API responses
 - [ ] **Remove unused dependencies** - Audit and remove any unused npm/Python dependencies
-- [ ] **Add database vacuum** - Periodic SQLite VACUUM to reclaim space and optimize database
-- [ ] **Frontend error reporting** - Add error reporting service (Sentry, Rollbar) for production error tracking
-- [ ] **Add request size limits** - Enforce request body size limits in Flask to prevent DoS
-- [ ] **Improve JWT token handling** - Add token refresh mechanism instead of fixed expiration
-- [ ] **Add CORS configuration** - Explicitly configure CORS if needed for cross-origin requests
-- [ ] **Frontend performance monitoring** - Add performance monitoring (Web Vitals, custom metrics)
-- [ ] **Add database query logging** - Log slow queries for optimization (in development/debug mode)
-- [ ] **Frontend bundle analysis** - Analyze bundle size and identify optimization opportunities
+- [ ] **Optimize image processing** - Consider async/background processing for thumbnail generation on large images
+- [ ] **Make HTTP timeout configurable** - `tools.py` has hardcoded 30s timeout; move to config
+- [ ] **Make thumbnail dimensions configurable** - `images.py` has hardcoded 400x400; move to config
 
 ## Notes
 
