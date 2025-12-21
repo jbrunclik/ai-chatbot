@@ -406,6 +406,52 @@ body {
     flex-direction: column;
     gap: 16px;
     position: relative;
+    scroll-behavior: auto; /* Allow programmatic smooth scroll */
+}
+
+/* Scroll to Bottom Button */
+.scroll-to-bottom {
+    position: sticky;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--bg-hover);
+    border: 1px solid var(--text-muted);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.15s, color 0.15s, border-color 0.15s;
+    z-index: 20;
+    opacity: 1;
+    margin-top: -52px;
+    align-self: center;
+    flex-shrink: 0;
+}
+
+.scroll-to-bottom:hover {
+    background-color: var(--bg-tertiary);
+    color: white;
+    border-color: var(--text-secondary);
+}
+
+.scroll-to-bottom:active {
+    transform: translateX(-50%) scale(0.95);
+}
+
+.scroll-to-bottom svg {
+    width: 18px;
+    height: 18px;
+}
+
+.scroll-to-bottom.hidden {
+    opacity: 0;
+    pointer-events: none;
 }
 
 .welcome-message {
