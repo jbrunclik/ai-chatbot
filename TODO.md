@@ -40,7 +40,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Conversation export (JSON, Markdown)
 - [ ] Conversation sharing (public links)
 - [ ] Keyboard shortcuts
-- [ ] Voice input
+- [x] Voice input (speech-to-text using Web Speech API)
 - [ ] **Voice conversation mode** - Full voice-based conversation with speech-to-text input and text-to-speech output
 
 ## Phase 5 - Production Hardening
@@ -83,7 +83,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Remove inline onclick handlers** - Migrated to event delegation in TypeScript components
 - [ ] **Add request timeout handling** - Handle timeouts for long-running Gemini API calls gracefully
 - [x] **TypeScript migration** - Frontend migrated to TypeScript with strict mode
-- [x] **Extract magic numbers to constants** - Swipe thresholds, timeouts extracted to named constants in TypeScript
+- [ ] **Extract magic numbers and strings to constants** - Swipe thresholds, timeouts extracted to named constants in TypeScript
 - [ ] **Remove console.log statements** - Implement structured frontend logging (console statements remain for debugging)
 - [ ] **Reduce innerHTML usage** - Heavy reliance on innerHTML; prefer textContent and createElement where possible
 - [ ] **Audit unused CSS classes** - After TypeScript migration, review and remove unused CSS classes from main.css

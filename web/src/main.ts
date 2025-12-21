@@ -33,9 +33,10 @@ import {
 import { initModelSelector, renderModelDropdown } from './components/ModelSelector';
 import { initFileUpload, clearPendingFiles, getPendingFiles } from './components/FileUpload';
 import { initLightbox } from './components/Lightbox';
+import { initVoiceInput } from './components/VoiceInput';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
 import { getElementById } from './utils/dom';
-import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON } from './utils/icons';
+import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON } from './utils/icons';
 import { DEFAULT_CONVERSATION_TITLE } from './types/api';
 import type { Conversation, Message } from './types/api';
 
@@ -91,6 +92,9 @@ function renderAppShell(): string {
               ${ATTACH_ICON}
             </button>
             <textarea id="message-input" placeholder="Type your message..." rows="1" autofocus></textarea>
+            <button id="voice-btn" class="btn-voice" title="Voice input" aria-pressed="false">
+              ${MICROPHONE_ICON}
+            </button>
             <button id="send-btn" class="btn btn-send" disabled>
               ${SEND_ICON}
             </button>
@@ -140,6 +144,7 @@ async function init(): Promise<void> {
   initMessageInput(sendMessage);
   initModelSelector();
   initFileUpload();
+  initVoiceInput();
   initLightbox();
   setupEventListeners();
   setupTouchGestures();
