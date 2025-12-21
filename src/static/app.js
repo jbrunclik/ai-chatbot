@@ -246,6 +246,16 @@ async function selectConversation(id) {
     // Close sidebar immediately for better mobile UX
     closeSidebar();
 
+    // Clean up thumbnail observer for previous conversation
+    if (thumbnailObserver) {
+        thumbnailObserver.disconnect();
+        thumbnailObserver = null;
+    }
+
+    // Clear current messages and show loading indicator
+    elements.messages.innerHTML = '';
+    showConversationLoader();
+
     try {
         const data = await api(`/api/conversations/${id}`);
         state.currentConversation = data;
@@ -256,6 +266,15 @@ async function selectConversation(id) {
         renderModelDropdown();
     } catch (error) {
         console.error('Failed to load conversation:', error);
+        // Show error message
+        elements.messages.innerHTML = `
+            <div class="welcome-message">
+                <h2>Error loading conversation</h2>
+                <p>${escapeHtml(error.message || 'Unknown error')}</p>
+            </div>
+        `;
+    } finally {
+        hideConversationLoader();
     }
 }
 
@@ -597,20 +616,30 @@ function addMessageToUI(role, content, files = []) {
                     attachEl.className = 'message-attachment';
 
                     const img = document.createElement('img');
-                    // Prefer thumbnail, then previewUrl (for just-uploaded), then full data
-                    if (file.thumbnail) {
-                        img.src = `data:${file.type};base64,${file.thumbnail}`;
-                    } else if (file.previewUrl) {
-                        img.src = file.previewUrl;
-                    } else if (file.data) {
-                        img.src = `data:${file.type};base64,${file.data}`;
-                    }
                     img.alt = file.name || 'Image';
                     img.className = 'message-attachment-image';
+                    img.loading = 'lazy'; // Native browser lazy loading
+
                     // Store message ID and file index for fetching full image from API
                     if (file.messageId) {
                         img.dataset.messageId = file.messageId;
                         img.dataset.fileIndex = file.fileIndex;
+                    }
+
+                    // For images: prefer previewUrl (just-uploaded), then lazy load thumbnail from API
+                    // Thumbnails are not included in conversation payload - fetched on-demand
+                    if (file.previewUrl) {
+                        // Just-uploaded file, use preview URL
+                        img.src = file.previewUrl;
+                    } else if (file.data) {
+                        // Fallback: if full data is present (shouldn't happen with optimization)
+                        img.src = `data:${file.type};base64,${file.data}`;
+                    } else if (file.messageId && file.fileIndex !== undefined) {
+                        // Will lazy load thumbnail from API when visible
+                        img.dataset.needsThumbnail = 'true';
+                        img.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzI1MjUyNSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiNhMGEwYTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZTwvdGV4dD48L3N2Zz4=';
+                        img.style.opacity = '0.7';
+                        img.title = 'Loading image...';
                     }
                     attachEl.appendChild(img);
                     imagesEl.appendChild(attachEl);
@@ -688,6 +717,146 @@ function addLoadingIndicator() {
     return messageEl;
 }
 
+function showConversationLoader() {
+    // Remove any existing loader
+    hideConversationLoader();
+
+    const loader = document.createElement('div');
+    loader.className = 'conversation-loader';
+    loader.innerHTML = `
+        <div class="conversation-loader-content">
+            <div class="loading">
+                <span></span><span></span><span></span>
+            </div>
+            <p>Loading conversation...</p>
+        </div>
+    `;
+    elements.messages.appendChild(loader);
+}
+
+function hideConversationLoader() {
+    const loader = elements.messages.querySelector('.conversation-loader');
+    if (loader) {
+        loader.remove();
+    }
+}
+
+// Lazy load thumbnails in parallel using Intersection Observer
+let thumbnailObserver = null;
+const MAX_CONCURRENT_THUMBNAILS = 6; // Limit concurrent fetches
+
+function setupThumbnailLazyLoading() {
+    // Clean up existing observer
+    if (thumbnailObserver) {
+        thumbnailObserver.disconnect();
+    }
+
+    // Find all images that need thumbnails
+    const imagesNeedingThumbnails = elements.messages.querySelectorAll(
+        'img.message-attachment-image[data-needs-thumbnail="true"]'
+    );
+
+    if (imagesNeedingThumbnails.length === 0) {
+        return;
+    }
+
+    // Create Intersection Observer
+    thumbnailObserver = new IntersectionObserver(
+        async (entries) => {
+            // Collect all images that are now visible and not already loading/loaded
+            const visibleImages = entries
+                .filter(entry => entry.isIntersecting)
+                .map(entry => entry.target)
+                .filter(img => img.dataset.loading !== 'true' && img.dataset.loaded !== 'true');
+
+            if (visibleImages.length === 0) return;
+
+            // Limit concurrent fetches
+            const imagesToFetch = visibleImages.slice(0, MAX_CONCURRENT_THUMBNAILS);
+
+            // Fetch thumbnails for visible images in parallel (with concurrency limit)
+            const fetchPromises = imagesToFetch.map(async (img) => {
+                // Skip if already fetching or loaded
+                if (img.dataset.loading === 'true' || img.dataset.loaded === 'true') {
+                    return;
+                }
+
+                const messageId = img.dataset.messageId;
+                const fileIndex = img.dataset.fileIndex;
+
+                if (!messageId || fileIndex === undefined) {
+                    return;
+                }
+
+                // Mark as loading
+                img.dataset.loading = 'true';
+                img.classList.add('thumbnail-loading');
+
+                try {
+                    // Fetch thumbnail from API (server will return thumbnail or fall back to full image)
+                    const apiUrl = `/api/messages/${messageId}/files/${fileIndex}/thumbnail`;
+                    const response = await fetch(apiUrl, {
+                        headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {}
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to load thumbnail');
+                    }
+
+                    // Create blob URL for the thumbnail
+                    const blob = await response.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+
+                    // Update image source
+                    img.src = blobUrl;
+                    img.style.opacity = '1';
+                    img.title = '';
+                    img.dataset.loaded = 'true';
+                    img.classList.remove('thumbnail-loading');
+
+                    // Store blob URL for cleanup
+                    img.dataset.blobUrl = blobUrl;
+                } catch (error) {
+                    console.error('Failed to load thumbnail:', error);
+                    img.classList.remove('thumbnail-loading');
+                    img.title = 'Failed to load image';
+                } finally {
+                    img.dataset.loading = 'false';
+                    // Stop observing this image
+                    thumbnailObserver.unobserve(img);
+                }
+            });
+
+            // Wait for all parallel fetches to complete
+            await Promise.all(fetchPromises);
+        },
+        {
+            root: elements.messages,
+            rootMargin: '100px', // Start loading 100px before image is visible
+            threshold: 0.01
+        }
+    );
+
+    // Clean up blob URLs when images are removed
+    const cleanupObserver = new MutationObserver(() => {
+        elements.messages.querySelectorAll('img[data-blob-url]').forEach(img => {
+            if (!img.isConnected) {
+                const blobUrl = img.dataset.blobUrl;
+                if (blobUrl) {
+                    URL.revokeObjectURL(blobUrl);
+                }
+            }
+        });
+    });
+    cleanupObserver.observe(elements.messages, { childList: true, subtree: true });
+
+    // Observe all images that need thumbnails
+    imagesNeedingThumbnails.forEach(img => {
+        thumbnailObserver.observe(img);
+    });
+}
+
+
 // Model Functions
 async function loadModels() {
     try {
@@ -750,6 +919,12 @@ function renderMessages() {
         }));
         addMessageToUI(msg.role, msg.content, filesWithMsgId);
     });
+
+    // Setup lazy loading for thumbnails after rendering
+    // Use setTimeout to ensure DOM is ready
+    setTimeout(() => {
+        setupThumbnailLazyLoading();
+    }, 0);
 }
 
 function renderWelcome() {
@@ -996,13 +1171,6 @@ function renderFilePreview() {
             `;
         }
     }).join('');
-}
-
-function getFileIcon(mimeType) {
-    if (mimeType === 'application/pdf') return '📄';
-    if (mimeType.startsWith('text/')) return '📝';
-    if (mimeType === 'application/json') return '{ }';
-    return '📎';
 }
 
 function getFileIconSvg(mimeType) {
@@ -1306,7 +1474,6 @@ function setupEventListeners() {
             const deltaX = swipeStartX - swipeCurrentX;
             const deltaY = Math.abs(swipeStartY - (e.changedTouches[0]?.clientY || swipeStartY));
             const timeElapsed = Date.now() - swipeStartTime;
-            const isOpen = getInitialState(swipeTarget);
 
             // Restore transition
             swipeTarget.style.transition = '';
