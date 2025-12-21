@@ -53,7 +53,7 @@ auth = Blueprint("auth", __name__, url_prefix="/auth")
 @auth.route("/google", methods=["POST"])
 def google_auth() -> tuple[dict[str, Any], int]:
     """Authenticate with Google ID token from Sign In with Google."""
-    if Config.LOCAL_MODE:
+    if Config.is_development():
         return {"error": "Authentication disabled in local mode"}, 400
 
     data = request.get_json() or {}

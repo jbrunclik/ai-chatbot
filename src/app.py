@@ -1,6 +1,8 @@
+import json
 import sys
+from pathlib import Path
 
-from flask import Flask, Response, send_from_directory
+from flask import Flask, Response, render_template, send_from_directory
 
 from src.api.routes import api, auth
 from src.config import Config
@@ -8,22 +10,48 @@ from src.config import Config
 
 def create_app() -> Flask:
     """Create and configure the Flask application."""
-    app = Flask(__name__, static_folder="static", static_url_path="/static")
+    app = Flask(
+        __name__,
+        static_folder="../static",
+        static_url_path="/static",
+        template_folder="templates",
+    )
 
     # Register blueprints
     app.register_blueprint(api)
     app.register_blueprint(auth)
 
-    # Serve index.html at root with version for cache busting
+    # Load Vite manifest for production builds
+    vite_manifest: dict[str, dict[str, str | list[str]]] = {}
+    manifest_path = Path(app.static_folder or "static") / "assets" / ".vite" / "manifest.json"
+    if manifest_path.exists():
+        with open(manifest_path) as f:
+            vite_manifest = json.load(f)
+
     @app.route("/")
-    def index() -> Response:
-        static_folder = app.static_folder or "static"
-        with open(f"{static_folder}/index.html") as f:
-            html = f.read()
-        # Inject version query param for cache busting
-        html = html.replace('.css"', f'.css?v={Config.VERSION}"')
-        html = html.replace('.js"', f'.js?v={Config.VERSION}"')
-        return Response(html, mimetype="text/html")
+    def index() -> str | tuple[str, int]:
+        js_file: str | None = None
+        css_file: str | None = None
+
+        # In development mode, always use Vite dev server (ignore manifest)
+        dev_mode = Config.is_development()
+
+        if not dev_mode:
+            # Production: require manifest and use hashed filenames
+            if not vite_manifest:
+                return "Frontend not built. Run 'make build' first.", 500
+            main_entry = vite_manifest.get("src/main.ts", {})
+            js_file = str(main_entry.get("file")) if main_entry.get("file") else None
+            css_files = main_entry.get("css", [])
+            if isinstance(css_files, list) and css_files:
+                css_file = str(css_files[0])
+
+        return render_template(
+            "index.html",
+            js_file=js_file,
+            css_file=css_file,
+            dev_mode=dev_mode,
+        )
 
     # Serve static files
     @app.route("/<path:path>")
@@ -45,9 +73,9 @@ def main() -> None:
 
     app = create_app()
     print(f"Starting AI Chatbot on port {Config.PORT}")
-    print(f"Local mode: {Config.LOCAL_MODE}")
+    print(f"Environment: {Config.FLASK_ENV}")
     print(f"Available models: {list(Config.MODELS.keys())}")
-    app.run(host="0.0.0.0", port=Config.PORT, debug=Config.DEBUG)
+    app.run(host="0.0.0.0", port=Config.PORT, debug=Config.is_development())
 
 
 if __name__ == "__main__":

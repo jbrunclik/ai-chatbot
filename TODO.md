@@ -19,6 +19,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] Conversation delete functionality
 - [ ] Conversation rename functionality
 - [x] Mobile gesture support (swipe to open sidebar, swipe to delete conversations)
+- [ ] **Show conversation metadata** - Display dates (created, last updated) in sidebar conversation list
 - [ ] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
 
 ## Phase 3 - Tools & Extensions
@@ -75,17 +76,17 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Consider async Flask (quart) for better concurrency
 - [ ] Add OpenAPI/Swagger documentation
 - [ ] **Store files and thumbnails outside DB** - Move file data and thumbnails to object storage (S3, MinIO, etc.) for better scalability and performance
-- [ ] **Split JavaScript into modules** - Break up monolithic app.js into multiple files with a lightweight build system (e.g., esbuild, Vite, or Rollup)
+- [x] **Split JavaScript into modules** - Migrated to Vite + TypeScript with modular components in `web/src/`
 - [ ] **Add structured logging** - Replace print statements with proper logging framework (Python logging module). Currently `images.py:69` uses `print()`.
 - [ ] **Error handling standardization** - Create consistent error response format across all API endpoints
 - [ ] **Frontend error boundaries** - Add error handling for failed API calls with retry logic. Also wrap `response.json()` in try-catch.
-- [ ] **Remove inline onclick handlers** - Replace inline onclick in HTML with event delegation (model selector in `app.js:961` still uses it)
+- [x] **Remove inline onclick handlers** - Migrated to event delegation in TypeScript components
 - [ ] **Add request timeout handling** - Handle timeouts for long-running Gemini API calls gracefully
-- [ ] **TypeScript migration** - Consider migrating frontend to TypeScript for better type safety
-- [ ] **Add JSDoc type annotations** - Add JSDoc comments to JavaScript functions for IDE support
-- [ ] **Extract magic numbers to constants** - e.g., `SWIPE_THRESHOLD = 60` in app.js, timeout values in tools.py
-- [ ] **Remove console.log statements** - 16 console.log/error/warn statements in app.js; implement structured frontend logging
+- [x] **TypeScript migration** - Frontend migrated to TypeScript with strict mode
+- [x] **Extract magic numbers to constants** - Swipe thresholds, timeouts extracted to named constants in TypeScript
+- [ ] **Remove console.log statements** - Implement structured frontend logging (console statements remain for debugging)
 - [ ] **Reduce innerHTML usage** - Heavy reliance on innerHTML; prefer textContent and createElement where possible
+- [ ] **Audit unused CSS classes** - After TypeScript migration, review and remove unused CSS classes from main.css
 
 ### 🟢 Database
 - [ ] **Database connection pooling** - Consider connection pooling for SQLite (though SQLite has limitations)
@@ -98,11 +99,12 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Add database connectivity check** - Verify database is accessible at startup with clear error message
 
 ### 🔵 Frontend Performance & UX
-- [ ] **Frontend bundle optimization** - Bundle and minify JS/CSS instead of loading from CDN (marked.js, highlight.js)
+- [ ] **Replace native browser dialogs** - Replace `alert()`, `confirm()`, and `prompt()` with custom modal components for better UX
+- [x] **Frontend bundle optimization** - Migrated to Vite, bundles marked.js and highlight.js from npm
 - [ ] **Add service worker** - Implement service worker for offline support and better caching
 - [ ] **Add file upload progress** - Show upload progress indicator for large file uploads
 - [ ] **Accessibility improvements** - Add ARIA labels, improve keyboard navigation, ensure screen reader compatibility
-- [ ] **Frontend state management** - Consider using a state management library (Zustand, Redux) instead of global state object
+- [x] **Frontend state management** - Migrated to Zustand for state management
 - [ ] **Frontend code splitting** - Split frontend code into chunks for better initial load performance
 - [ ] **Frontend error reporting** - Add error reporting service (Sentry, Rollbar) for production error tracking
 - [ ] **Frontend performance monitoring** - Add performance monitoring (Web Vitals, custom metrics)

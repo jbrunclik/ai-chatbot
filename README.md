@@ -21,7 +21,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 ## Tech Stack
 
 - **Backend**: Python 3, Flask, LangGraph/LangChain
-- **Frontend**: Pure JavaScript (ES modules, no build step)
+- **Frontend**: TypeScript, Vite, Zustand
 - **Database**: SQLite
 - **Auth**: Google Identity Services (GIS) + JWT tokens
 
@@ -30,6 +30,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 ### Prerequisites
 
 - Python 3.11+
+- Node.js 18+ and npm
 - Google Gemini API key ([Get one here](https://aistudio.google.com/apikey))
 - (Optional) Google Cloud project for authentication
 
@@ -56,9 +57,10 @@ Edit `.env` with your settings:
 GEMINI_API_KEY=your-gemini-api-key
 
 # For local development (no auth)
-LOCAL_MODE=true
+FLASK_ENV=development
 
 # For production with Google Sign In
+FLASK_ENV=production
 GOOGLE_CLIENT_ID=your-client-id
 JWT_SECRET_KEY=your-secret-key
 ALLOWED_EMAILS=user1@gmail.com,user2@gmail.com
@@ -87,7 +89,15 @@ No client secret is needed - the app uses Google Identity Services which validat
 ### Running
 
 ```bash
-# Development
+# Development (runs Flask + Vite dev servers concurrently)
+make dev
+
+# Visit http://localhost:5173 (Vite dev server with HMR)
+
+# Production build
+make build
+
+# Run production server
 make run
 
 # Visit http://localhost:8000
@@ -97,7 +107,9 @@ make run
 
 ```bash
 make setup      # Create venv and install dependencies (Python + Node.js)
-make run        # Run development server
+make dev        # Run Flask + Vite dev servers concurrently (with HMR)
+make build      # Build frontend for production
+make run        # Run Flask server (production mode)
 make lint       # Run ruff, mypy, and ESLint
 make lint-fix   # Auto-fix linting issues
 make test       # Run tests
@@ -122,22 +134,42 @@ make deploy
 journalctl --user -u ai-chatbot -f
 ```
 
+The systemd service automatically runs `npm install && npm run build` before starting Gunicorn.
+
 ## Project Structure
 
 ```
 ai-chatbot/
-├── src/
-│   ├── app.py              # Flask application entry point
-│   ├── config.py           # Configuration from environment
-│   ├── auth/               # Google Sign In + JWT authentication
-│   ├── api/                # REST API routes
-│   ├── agent/              # LangGraph agent and tools
-│   ├── db/                 # SQLite models
-│   └── static/             # Frontend assets (HTML, JS, CSS)
-├── Makefile                # Build and run targets
-├── pyproject.toml          # Python project configuration
-├── requirements.txt        # Python dependencies
-└── .env.example            # Environment template
+├── src/                          # Flask backend
+│   ├── app.py                    # Flask entry point, Vite manifest loading
+│   ├── config.py                 # Environment config
+│   ├── templates/
+│   │   └── index.html            # Jinja2 shell (meta tags, asset injection)
+│   ├── auth/                     # Google Sign In + JWT authentication
+│   ├── api/                      # REST API routes
+│   ├── agent/                    # LangGraph agent and tools
+│   ├── db/                       # SQLite models
+│   └── utils/                    # Utilities (image processing)
+├── web/                          # Vite + TypeScript frontend
+│   ├── vite.config.ts            # Vite config with Flask proxy
+│   ├── tsconfig.json             # TypeScript config
+│   ├── package.json              # Frontend dependencies
+│   └── src/
+│       ├── main.ts               # Entry point
+│       ├── types/                # TypeScript interfaces
+│       ├── api/                  # API client
+│       ├── auth/                 # Google Sign-In
+│       ├── state/                # Zustand store
+│       ├── components/           # UI modules
+│       ├── gestures/             # Touch handlers
+│       ├── utils/                # DOM, markdown, icons
+│       └── styles/               # CSS
+├── static/                       # Build output + PWA assets
+│   ├── assets/                   # Vite output (hashed JS/CSS)
+│   └── manifest.json             # PWA manifest
+├── Makefile                      # Build and run targets
+├── pyproject.toml                # Python project configuration
+└── requirements.txt              # Python dependencies
 ```
 
 ## License

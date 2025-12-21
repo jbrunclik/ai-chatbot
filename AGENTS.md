@@ -4,32 +4,62 @@ This file contains context for Claude Code to work effectively on this project.
 
 ## Quick Reference
 
-- **Run**: `make run` (starts on port 8000)
+- **Dev**: `make dev` (runs Flask + Vite concurrently)
+- **Build**: `make build` (production build)
 - **Lint**: `make lint` (ruff + mypy)
 - **Setup**: `make setup` (venv + deps)
 
 ## Project Structure
 
 ```
-src/
-├── app.py              # Flask entry point
-├── config.py           # Environment config
-├── auth/
-│   ├── jwt_auth.py     # JWT token handling, @require_auth decorator
-│   └── google_auth.py  # GIS token validation, email whitelist
-├── api/
-│   └── routes.py       # REST endpoints (/api/*, /auth/*)
-├── agent/
-│   ├── chat_agent.py   # LangGraph agent with Gemini
-│   └── tools.py        # Web tools (fetch_url, web_search)
-├── db/
-│   └── models.py       # SQLite: User, Conversation, Message, AgentState
-├── utils/
-│   └── images.py       # Thumbnail generation (Pillow)
-└── static/
-    ├── index.html
-    ├── app.js          # Frontend state management, API calls
-    └── styles.css      # Dark theme, responsive layout
+ai-chatbot/
+├── src/                          # Flask backend
+│   ├── app.py                    # Flask entry point, Vite manifest loading
+│   ├── config.py                 # Environment config
+│   ├── templates/
+│   │   └── index.html            # Jinja2 shell (meta tags, asset injection)
+│   ├── auth/
+│   │   ├── jwt_auth.py           # JWT token handling, @require_auth decorator
+│   │   └── google_auth.py        # GIS token validation, email whitelist
+│   ├── api/
+│   │   └── routes.py             # REST endpoints (/api/*, /auth/*)
+│   ├── agent/
+│   │   ├── chat_agent.py         # LangGraph agent with Gemini
+│   │   └── tools.py              # Web tools (fetch_url, web_search)
+│   ├── db/
+│   │   └── models.py             # SQLite: User, Conversation, Message, AgentState
+│   └── utils/
+│       └── images.py             # Thumbnail generation (Pillow)
+├── web/                          # Vite + TypeScript frontend
+│   ├── vite.config.ts            # Vite config with Flask proxy
+│   ├── tsconfig.json             # TypeScript config
+│   ├── package.json              # Frontend dependencies
+│   └── src/
+│       ├── main.ts               # Entry point, app shell, event wiring
+│       ├── types/                # TypeScript interfaces
+│       │   ├── api.ts            # API response types
+│       │   └── google.d.ts       # Google Identity Services types
+│       ├── api/client.ts         # Typed fetch wrapper, streaming
+│       ├── auth/google.ts        # Google Sign-In, JWT handling
+│       ├── state/store.ts        # Zustand store
+│       ├── components/           # UI modules
+│       │   ├── Sidebar.ts        # Conversation list
+│       │   ├── Messages.ts       # Message rendering
+│       │   ├── MessageInput.ts   # Input area, file preview
+│       │   ├── ModelSelector.ts  # Model dropdown
+│       │   ├── FileUpload.ts     # File handling, base64
+│       │   └── Lightbox.ts       # Image viewer
+│       ├── gestures/swipe.ts     # Touch handlers
+│       ├── utils/
+│       │   ├── dom.ts            # DOM helpers, escapeHtml
+│       │   ├── markdown.ts       # marked + highlight.js
+│       │   ├── thumbnails.ts     # Intersection Observer lazy loading
+│       │   └── icons.ts          # SVG icon constants
+│       └── styles/main.css       # Dark theme, responsive layout
+└── static/                       # Build output + PWA assets
+    ├── assets/                   # Vite output (hashed JS/CSS)
+    ├── manifest.json
+    └── icons/
 ```
 
 ## Key Files
@@ -39,6 +69,28 @@ src/
 - [chat_agent.py](src/agent/chat_agent.py) - LangGraph graph, Gemini integration
 - [models.py](src/db/models.py) - Database schema and operations
 - [images.py](src/utils/images.py) - Thumbnail generation for uploaded images
+- [main.ts](web/src/main.ts) - Frontend entry point
+- [store.ts](web/src/state/store.ts) - Zustand state management
+
+## Development Workflow
+
+### Local Development
+```bash
+make dev  # Runs Flask (8000) + Vite (5173) concurrently
+```
+- Vite dev server proxies API calls to Flask
+- HMR enabled for instant CSS/JS updates
+- TypeScript type checking on save
+
+### Production Build
+```bash
+make build  # Outputs to static/assets/
+```
+- Vite generates hashed filenames for cache busting
+- Flask reads manifest.json to inject correct asset paths
+
+### Deployment (Hetzner)
+systemd runs `npm install && npm run build` via ExecStartPre before starting gunicorn.
 
 ## Gemini API Notes
 
@@ -62,7 +114,7 @@ Use `extract_text_content()` in [chat_agent.py](src/agent/chat_agent.py) to norm
 
 Uses Google Identity Services (GIS) for client-side authentication:
 
-1. `LOCAL_MODE=true` → Skip all auth, use "local@localhost" user
+1. `FLASK_ENV=development` → Skip all auth, use "local@localhost" user
 2. Otherwise:
    - Frontend loads GIS library and renders "Sign in with Google" button
    - User clicks → Google popup → Returns ID token to frontend
@@ -74,16 +126,15 @@ Uses Google Identity Services (GIS) for client-side authentication:
 ## Code Style
 
 - Type hints in all Python code
+- TypeScript for all frontend code (strict mode)
 - Conventional Commits: `type(scope): description`
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 - Run `make lint` before committing
-- **Bump `Config.VERSION`** in [config.py](src/config.py) only when committing frontend changes (for cache busting). No need to bump during development - only before commit/push.
-- Frontend: ES modules, no build step
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
 
 ## Touch Gestures
 
-The app uses a reusable swipe gesture system (`createSwipeHandler` in [app.js](src/static/app.js)):
+The app uses a reusable swipe gesture system (`createSwipeHandler` in [swipe.ts](web/src/gestures/swipe.ts)):
 
 1. **Conversation swipe-to-delete**: Swipe left on a conversation item to reveal delete button, swipe right to close
 2. **Sidebar swipe-to-open**: Swipe from left edge (within 50px) to open sidebar, swipe left on main content to close
@@ -98,7 +149,7 @@ When working on mobile/PWA features, beware of these iOS Safari issues:
 
 2. **Inline `onclick` handlers don't work reliably** - Use event delegation instead of inline `onclick` on dynamically created elements. Attach listeners to parent containers.
 
-3. **PWA caching is aggressive** - Users may need to remove and re-add the app to home screen to see changes. Bump `Config.VERSION` for cache busting.
+3. **PWA caching is aggressive** - Users may need to remove and re-add the app to home screen to see changes. Vite handles cache busting via hashed filenames.
 
 ## Performance Optimizations
 
@@ -128,6 +179,14 @@ Edit [tools.py](src/agent/tools.py), add function with `@tool` decorator and add
 ### Change available models
 Edit [config.py](src/config.py) `MODELS` dict.
 
+### Add a new UI component
+1. Create TypeScript file in `web/src/components/`
+2. Export init function and render functions
+3. Import and wire in `main.ts`
+
+### Add new icons
+Add SVG constants to [icons.ts](web/src/utils/icons.ts) and import where needed.
+
 ## Related Files
 
 - [TODO.md](TODO.md) - Memory bank for planned work
@@ -139,3 +198,42 @@ When making significant changes to the codebase:
 1. Update [README.md](README.md) if user-facing features change
 2. Update this file (CLAUDE.md) if architecture, code patterns, or developer workflows change
 3. Update [TODO.md](TODO.md) to mark completed items or add new planned work
+
+---
+
+## Preferences & Corrections
+
+When I correct Claude's approach, the reasoning is documented here to prevent repeated mistakes.
+
+### Naming
+
+**Preference**: Use "AI Chatbot" consistently (not "AI Chat")
+**Context**: Branding consistency across all UI text, meta tags, and documentation
+
+### Directory Structure
+
+**Preference**: Use `web/` for frontend (not `frontend/`)
+**Context**: Leaves room for potential native mobile app later (`ios/`, `android/`)
+
+### State Management
+
+**Preference**: Use Zustand for state management
+**Context**: Lightweight, TypeScript-first, simpler than Redux. Avoid custom state management solutions.
+
+### Development Server
+
+**Preference**: Use `concurrently` for running multiple dev servers
+**Context**: Background processes are hard to manage. `concurrently` shows both outputs clearly and kills both on Ctrl+C.
+**Avoid**: Using `&` or background jobs in Makefile
+
+### UI Patterns
+
+**Preference**: Use event delegation for dynamic elements
+**Context**: iOS Safari has issues with inline onclick handlers on dynamically created elements
+**Avoid**: Inline `onclick` attributes in template strings
+
+### Icons
+
+**Preference**: Centralize SVG icons in [icons.ts](web/src/utils/icons.ts)
+**Context**: Prevents duplication across components, makes icons easy to find and update
+**Avoid**: Inline SVG in template strings (import from icons.ts instead)

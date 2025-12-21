@@ -56,7 +56,7 @@ def require_auth(f: F) -> F:
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
         # Skip auth in local mode
-        if Config.LOCAL_MODE:
+        if Config.is_development():
             # Create a default local user
             local_user = db.get_or_create_user(
                 email="local@localhost",
