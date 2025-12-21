@@ -26,7 +26,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Tool framework** - Extensible system for adding agent tools
 - [x] Web search tool (DuckDuckGo)
 - [x] URL fetch tool (extract text from web pages)
-- [ ] **Forcing search/browser tool** - Allow users to force the agent to use search or browser tools for specific queries
+- [x] **Forcing search/browser tool** - Allow users to force the agent to use search or browser tools for specific queries
 - [ ] Image generation tool (Gemini 3 Pro Image or Imagen)
 - [ ] Text-to-speech tool
 - [ ] Code execution sandbox

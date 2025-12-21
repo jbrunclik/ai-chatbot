@@ -262,6 +262,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     Accepts JSON body with:
     - message: str (required) - the text message
     - files: list[dict] (optional) - array of {name, type, data} file objects
+    - force_tools: list[str] (optional) - list of tool names to force (e.g. ["web_search"])
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
@@ -272,6 +273,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     data = request.get_json() or {}
     message_text = data.get("message", "").strip()
     files = data.get("files", [])
+    force_tools = data.get("force_tools", [])
 
     if not message_text and not files:
         return {"error": "Message or files required"}, 400
@@ -292,7 +294,9 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
 
     # Create agent and get response
     agent = ChatAgent(model_name=conv.model)
-    response, new_state = agent.chat_with_state(message_text, files, previous_state)
+    response, new_state = agent.chat_with_state(
+        message_text, files, previous_state, force_tools=force_tools
+    )
 
     # Save response and state
     assistant_msg = db.add_message(conv_id, "assistant", response)
@@ -319,6 +323,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     Accepts JSON body with:
     - message: str (required) - the text message
     - files: list[dict] (optional) - array of {name, type, data} file objects
+    - force_tools: list[str] (optional) - list of tool names to force (e.g. ["web_search"])
 
     Uses SSE keepalive heartbeats to prevent proxy timeouts during long LLM thinking phases.
     Keepalives are sent as SSE comments (: keepalive) which clients ignore but proxies see as activity.
@@ -332,6 +337,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     data = request.get_json() or {}
     message_text = data.get("message", "").strip()
     files = data.get("files", [])
+    force_tools = data.get("force_tools", [])
 
     if not message_text and not files:
         return {"error": "Message or files required"}, 400
@@ -368,7 +374,9 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         def stream_tokens() -> None:
             """Background thread that streams tokens into the queue."""
             try:
-                for token in agent.stream_chat(message_text, files, history):
+                for token in agent.stream_chat(
+                    message_text, files, history, force_tools=force_tools
+                ):
                     token_queue.put(token)
                 token_queue.put(None)  # Signal completion
             except Exception as e:

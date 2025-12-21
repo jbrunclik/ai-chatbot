@@ -36,7 +36,7 @@ import { initLightbox } from './components/Lightbox';
 import { initVoiceInput } from './components/VoiceInput';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
 import { getElementById } from './utils/dom';
-import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON } from './utils/icons';
+import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, PLUS_ICON } from './utils/icons';
 import { DEFAULT_CONVERSATION_TITLE } from './types/api';
 import type { Conversation, Message } from './types/api';
 
@@ -47,17 +47,10 @@ function renderAppShell(): string {
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
         <h1>AI Chatbot</h1>
-        <button id="new-chat-btn" class="btn btn-primary">+ New Chat</button>
+        <button id="new-chat-btn" class="btn btn-primary">${PLUS_ICON} New Chat</button>
       </div>
       <div id="conversations-list" class="conversations-list"></div>
       <div class="sidebar-footer">
-        <div class="settings-toggle">
-          <label class="toggle-switch">
-            <input type="checkbox" id="streaming-toggle" checked>
-            <span class="toggle-slider"></span>
-          </label>
-          <span class="toggle-label">Stream responses</span>
-        </div>
         <div id="user-info" class="user-info"></div>
       </div>
     </aside>
@@ -78,23 +71,35 @@ function renderAppShell(): string {
 
       <div class="input-area">
         <div class="input-wrapper">
-          <div class="model-selector">
-            <button id="model-selector-btn" class="model-selector-btn">
-              <span id="current-model-name">Loading...</span>
-              <span class="dropdown-arrow">▼</span>
-            </button>
-            <div id="model-dropdown" class="model-dropdown hidden"></div>
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <div class="model-selector">
+                <button id="model-selector-btn" class="model-selector-btn">
+                  <span id="current-model-name">Loading...</span>
+                  <span class="dropdown-arrow">▼</span>
+                </button>
+                <div id="model-dropdown" class="model-dropdown hidden"></div>
+              </div>
+              <button id="stream-btn" class="btn-toolbar active" title="Toggle streaming" aria-pressed="true">
+                ${STREAM_ICON}
+              </button>
+              <button id="search-btn" class="btn-toolbar" title="Force web search for next message">
+                ${SEARCH_ICON}
+              </button>
+            </div>
+            <div class="toolbar-right">
+              <button id="voice-btn" class="btn-toolbar btn-voice" title="Voice input" aria-pressed="false">
+                ${MICROPHONE_ICON}
+              </button>
+              <button id="attach-btn" class="btn-toolbar" title="Attach files">
+                ${ATTACH_ICON}
+              </button>
+            </div>
           </div>
           <div id="file-preview" class="file-preview hidden"></div>
           <input type="file" id="file-input" multiple>
           <div class="input-container">
-            <button id="attach-btn" class="btn-attach" title="Attach files">
-              ${ATTACH_ICON}
-            </button>
             <textarea id="message-input" placeholder="Type your message..." rows="1" autofocus></textarea>
-            <button id="voice-btn" class="btn-voice" title="Voice input" aria-pressed="false">
-              ${MICROPHONE_ICON}
-            </button>
             <button id="send-btn" class="btn btn-send" disabled>
               ${SEND_ICON}
             </button>
@@ -149,14 +154,8 @@ async function init(): Promise<void> {
   setupEventListeners();
   setupTouchGestures();
 
-  // Initialize streaming toggle
-  const streamingToggle = getElementById<HTMLInputElement>('streaming-toggle');
-  if (streamingToggle) {
-    streamingToggle.checked = useStore.getState().streamingEnabled;
-    streamingToggle.addEventListener('change', () => {
-      useStore.getState().setStreamingEnabled(streamingToggle.checked);
-    });
-  }
+  // Initialize toolbar buttons
+  initToolbarButtons();
 
   // Check authentication
   const isAuthenticated = await checkAuth();
@@ -397,16 +396,18 @@ async function sendMessage(): Promise<void> {
     addMessageToUI(userMessage, messagesContainer);
   }
 
-  // Clear input
+  // Clear input and reset force tools (one-shot)
   clearMessageInput();
   clearPendingFiles();
   setInputLoading(true);
+  const forceTools = [...store.forceTools];
+  resetForceTools();
 
   try {
     if (store.streamingEnabled) {
-      await sendStreamingMessage(conv.id, messageText, files);
+      await sendStreamingMessage(conv.id, messageText, files, forceTools);
     } else {
-      await sendBatchMessage(conv.id, messageText, files);
+      await sendBatchMessage(conv.id, messageText, files, forceTools);
     }
   } catch (error) {
     console.error('Failed to send message:', error);
@@ -421,13 +422,14 @@ async function sendMessage(): Promise<void> {
 async function sendStreamingMessage(
   convId: string,
   message: string,
-  files: ReturnType<typeof getPendingFiles>
+  files: ReturnType<typeof getPendingFiles>,
+  forceTools: string[]
 ): Promise<void> {
   const messageEl = addStreamingMessage();
   let fullContent = '';
 
   try {
-    for await (const event of chat.stream(convId, message, files)) {
+    for await (const event of chat.stream(convId, message, files, forceTools)) {
       if (event.type === 'token') {
         fullContent += event.text;
         updateStreamingMessage(messageEl, fullContent);
@@ -452,12 +454,13 @@ async function sendStreamingMessage(
 async function sendBatchMessage(
   convId: string,
   message: string,
-  files: ReturnType<typeof getPendingFiles>
+  files: ReturnType<typeof getPendingFiles>,
+  forceTools: string[]
 ): Promise<void> {
   showLoadingIndicator();
 
   try {
-    const response = await chat.sendBatch(convId, message, files);
+    const response = await chat.sendBatch(convId, message, files, forceTools);
     hideLoadingIndicator();
 
     const assistantMessage: Message = {
@@ -477,6 +480,57 @@ async function sendBatchMessage(
   } catch (error) {
     hideLoadingIndicator();
     throw error;
+  }
+}
+
+// Initialize toolbar buttons (stream toggle, search toggle)
+function initToolbarButtons(): void {
+  const store = useStore.getState();
+  const streamBtn = getElementById<HTMLButtonElement>('stream-btn');
+  const searchBtn = getElementById<HTMLButtonElement>('search-btn');
+
+  // Initialize stream button state from store
+  if (streamBtn) {
+    updateStreamButtonState(streamBtn, store.streamingEnabled);
+    streamBtn.addEventListener('click', () => {
+      const currentState = useStore.getState().streamingEnabled;
+      const newState = !currentState;
+      useStore.getState().setStreamingEnabled(newState);
+      updateStreamButtonState(streamBtn, newState);
+    });
+  }
+
+  // Initialize search button (one-shot toggle for web_search tool)
+  if (searchBtn) {
+    updateSearchButtonState(searchBtn, store.forceTools.includes('web_search'));
+    searchBtn.addEventListener('click', () => {
+      useStore.getState().toggleForceTool('web_search');
+      const isActive = useStore.getState().forceTools.includes('web_search');
+      updateSearchButtonState(searchBtn, isActive);
+    });
+  }
+}
+
+// Update stream button visual state
+function updateStreamButtonState(btn: HTMLButtonElement, enabled: boolean): void {
+  btn.classList.toggle('active', enabled);
+  btn.setAttribute('aria-pressed', String(enabled));
+  btn.innerHTML = enabled ? STREAM_ICON : STREAM_OFF_ICON;
+  btn.title = enabled ? 'Streaming enabled (click to disable)' : 'Streaming disabled (click to enable)';
+}
+
+// Update search button visual state
+function updateSearchButtonState(btn: HTMLButtonElement, active: boolean): void {
+  btn.classList.toggle('active', active);
+  btn.title = active ? 'Web search will be used for next message' : 'Force web search for next message';
+}
+
+// Reset force tools and update UI after message is sent
+function resetForceTools(): void {
+  const searchBtn = getElementById<HTMLButtonElement>('search-btn');
+  useStore.getState().clearForceTools();
+  if (searchBtn) {
+    updateSearchButtonState(searchBtn, false);
   }
 }
 
