@@ -35,7 +35,7 @@ import { initFileUpload, clearPendingFiles, getPendingFiles } from './components
 import { initLightbox } from './components/Lightbox';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
 import { getElementById } from './utils/dom';
-import { ATTACH_ICON, CLOSE_ICON, SEND_ICON } from './utils/icons';
+import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON } from './utils/icons';
 import type { Message } from './types/api';
 
 // App HTML template
@@ -452,7 +452,7 @@ function setupEventListeners(): void {
     }
   });
 
-  // Document download buttons
+  // Document download buttons and message copy buttons
   getElementById('messages')?.addEventListener('click', (e) => {
     const downloadBtn = (e.target as HTMLElement).closest('.document-download');
     if (downloadBtn) {
@@ -461,8 +461,45 @@ function setupEventListeners(): void {
       if (messageId && fileIndex) {
         downloadFile(messageId, parseInt(fileIndex, 10));
       }
+      return;
+    }
+
+    const copyBtn = (e.target as HTMLElement).closest('.message-copy-btn');
+    if (copyBtn) {
+      copyMessageContent(copyBtn as HTMLButtonElement);
     }
   });
+}
+
+// Copy message content to clipboard
+async function copyMessageContent(button: HTMLButtonElement): Promise<void> {
+  const messageEl = button.closest('.message');
+  const contentEl = messageEl?.querySelector('.message-content');
+
+  if (!contentEl) return;
+
+  // Clone the content element and remove file attachments to get clean text
+  const clone = contentEl.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.message-files').forEach((el) => el.remove());
+
+  const textContent = clone.textContent?.trim();
+  if (!textContent) return;
+
+  try {
+    await navigator.clipboard.writeText(textContent);
+
+    // Show success feedback
+    const originalHtml = button.innerHTML;
+    button.innerHTML = CHECK_ICON;
+    button.classList.add('copied');
+
+    setTimeout(() => {
+      button.innerHTML = originalHtml;
+      button.classList.remove('copied');
+    }, 2000);
+  } catch (error) {
+    console.error('Failed to copy:', error);
+  }
 }
 
 // Setup touch gestures

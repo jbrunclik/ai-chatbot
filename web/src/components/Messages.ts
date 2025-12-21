@@ -2,7 +2,7 @@ import { escapeHtml, getElementById, scrollToBottom, isScrolledToBottom } from '
 import { renderMarkdown, highlightAllCodeBlocks } from '../utils/markdown';
 import { observeThumbnail } from '../utils/thumbnails';
 import { createUserAvatarElement } from '../utils/avatar';
-import { AI_AVATAR_SVG, getFileIcon, DOWNLOAD_ICON } from '../utils/icons';
+import { AI_AVATAR_SVG, getFileIcon, DOWNLOAD_ICON, COPY_ICON } from '../utils/icons';
 import { useStore } from '../state/store';
 import type { Message, FileMetadata } from '../types/api';
 
@@ -89,6 +89,16 @@ export function addMessageToUI(
     }
     contentWrapper.appendChild(content);
   }
+
+  // Add message actions (copy button)
+  const actions = document.createElement('div');
+  actions.className = 'message-actions';
+  actions.innerHTML = `
+    <button class="message-copy-btn" title="Copy message">
+      ${COPY_ICON}
+    </button>
+  `;
+  contentWrapper.appendChild(actions);
 
   messageEl.appendChild(contentWrapper);
   container.appendChild(messageEl);
@@ -255,6 +265,19 @@ export function finalizeStreamingMessage(
   const content = messageEl.querySelector('.message-content');
   if (content) {
     highlightAllCodeBlocks(content as HTMLElement);
+  }
+
+  // Add message actions (copy button)
+  const contentWrapper = messageEl.querySelector('.message-content-wrapper');
+  if (contentWrapper && !contentWrapper.querySelector('.message-actions')) {
+    const actions = document.createElement('div');
+    actions.className = 'message-actions';
+    actions.innerHTML = `
+      <button class="message-copy-btn" title="Copy message">
+        ${COPY_ICON}
+      </button>
+    `;
+    contentWrapper.appendChild(actions);
   }
 }
 

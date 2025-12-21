@@ -656,6 +656,52 @@ body {
     height: 16px;
 }
 
+/* Message Actions (copy button) */
+.message-actions {
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.message:hover .message-actions {
+    opacity: 1;
+}
+
+/* On touch devices, always show actions */
+@media (hover: none) {
+    .message-actions {
+        opacity: 0.6;
+    }
+}
+
+.message-copy-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+}
+
+.message-copy-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-tertiary);
+}
+
+.message-copy-btn.copied {
+    color: var(--success);
+}
+
+.message-copy-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
 /* Markdown content styling */
 .message-content p {
     margin-bottom: 12px;
