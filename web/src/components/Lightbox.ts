@@ -1,5 +1,4 @@
 import { getElementById } from '../utils/dom';
-import { CLOSE_ICON } from '../utils/icons';
 import { files } from '../api/client';
 
 let currentBlobUrl: string | null = null;
@@ -51,7 +50,7 @@ export async function openLightbox(
 
   // Show lightbox with loading state
   lightbox.classList.remove('hidden');
-  img.classList.add('loading');
+  lightbox.classList.add('loading');
   img.src = '';
 
   try {
@@ -65,7 +64,7 @@ export async function openLightbox(
 
     currentBlobUrl = URL.createObjectURL(blob);
     img.src = currentBlobUrl;
-    img.classList.remove('loading');
+    lightbox.classList.remove('loading');
   } catch (error) {
     console.error('Failed to load image:', error);
     closeLightbox();
@@ -81,11 +80,11 @@ export function closeLightbox(): void {
 
   if (lightbox) {
     lightbox.classList.add('hidden');
+    lightbox.classList.remove('loading');
   }
 
   if (img) {
     img.src = '';
-    img.classList.remove('loading');
   }
 
   // Clean up blob URL
@@ -93,20 +92,4 @@ export function closeLightbox(): void {
     URL.revokeObjectURL(currentBlobUrl);
     currentBlobUrl = null;
   }
-}
-
-/**
- * Render lightbox HTML (called once during app init)
- */
-export function renderLightbox(): string {
-  return `
-    <div id="lightbox" class="lightbox hidden">
-      <div class="lightbox-container">
-        <button class="lightbox-close" aria-label="Close">
-          ${CLOSE_ICON}
-        </button>
-        <img id="lightbox-img" src="" alt="Full size image">
-      </div>
-    </div>
-  `;
 }
