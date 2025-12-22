@@ -33,7 +33,7 @@ import {
 import { initModelSelector, renderModelDropdown } from './components/ModelSelector';
 import { initFileUpload, clearPendingFiles, getPendingFiles } from './components/FileUpload';
 import { initLightbox } from './components/Lightbox';
-import { initVoiceInput } from './components/VoiceInput';
+import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
 import { initScrollToBottom } from './components/ScrollToBottom';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
 import { getElementById } from './utils/dom';
@@ -340,6 +340,9 @@ async function refreshConversationTitle(convId: string): Promise<void> {
 
 // Send a message
 async function sendMessage(): Promise<void> {
+  // Stop voice recording if active (prevents text from being re-added after send)
+  stopVoiceRecording();
+
   let store = useStore.getState();
   const messageText = getMessageInput();
   const files = getPendingFiles();
@@ -653,7 +656,8 @@ function setupTouchGestures(): void {
         return false;
       }
       if ((e.target as HTMLElement).closest('.conversation-delete-swipe')) return false;
-      activeSwipeType = 'conversation';
+      // Note: We set activeSwipeType in onSwipeMove (when actual swiping starts),
+      // not here, to avoid blocking sidebar swipes after a tap (non-swipe touch)
       return true;
     },
     getTarget: (e) => {
@@ -672,6 +676,11 @@ function setupTouchGestures(): void {
     },
     getInitialState: (target) => {
       return target?.closest('.conversation-item-wrapper')?.classList.contains('swiped') || false;
+    },
+    onSwipeMove: () => {
+      // Mark as conversation swipe once actual swiping starts
+      // This prevents sidebar swipes from interfering mid-gesture
+      activeSwipeType = 'conversation';
     },
     onComplete: (target, deltaX) => {
       activeSwipeType = 'none';
@@ -698,6 +707,7 @@ function setupTouchGestures(): void {
   conversationsList.addEventListener('touchstart', conversationSwipe.handleTouchStart, { passive: true });
   conversationsList.addEventListener('touchmove', conversationSwipe.handleTouchMove, { passive: true });
   conversationsList.addEventListener('touchend', conversationSwipe.handleTouchEnd, { passive: true });
+  conversationsList.addEventListener('touchcancel', conversationSwipe.handleTouchCancel, { passive: true });
 
   // Sidebar edge swipe - swipe from left edge to open, swipe left to close
   let sidebarSwipeStartX = 0;
@@ -713,7 +723,13 @@ function setupTouchGestures(): void {
     const isSidebarOpen = sidebar.classList.contains('open');
 
     // Don't start sidebar swipe if touching a conversation item (let conversation swipe handle it)
-    if (target.closest('.conversation-item-wrapper')) return;
+    if (target.closest('.conversation-item-wrapper')) {
+      // Reset activeSwipeType if it was stuck on 'sidebar' from a previous incomplete swipe
+      if (activeSwipeType === 'sidebar') {
+        activeSwipeType = 'none';
+      }
+      return;
+    }
 
     // Start swipe if:
     // - Closed: in edge zone (swipe right to open)
@@ -727,6 +743,11 @@ function setupTouchGestures(): void {
       sidebarSwipeCurrentX = startX;
       isSidebarSwiping = false;
       activeSwipeType = 'sidebar';
+    } else {
+      // Reset if we're not starting a sidebar swipe
+      if (activeSwipeType === 'sidebar') {
+        activeSwipeType = 'none';
+      }
     }
   };
 
@@ -781,15 +802,25 @@ function setupTouchGestures(): void {
     activeSwipeType = 'none';
   };
 
+  // Handle touch cancel (iOS Safari can cancel touches during gestures)
+  const handleSidebarTouchCancel = (): void => {
+    sidebar.style.transform = '';
+    sidebar.style.transition = '';
+    isSidebarSwiping = false;
+    activeSwipeType = 'none';
+  };
+
   // Attach sidebar swipe to main area (for edge swipe to open)
   main.addEventListener('touchstart', handleSidebarTouchStart, { passive: true });
   main.addEventListener('touchmove', handleSidebarTouchMove, { passive: true });
   main.addEventListener('touchend', handleSidebarTouchEnd, { passive: true });
+  main.addEventListener('touchcancel', handleSidebarTouchCancel, { passive: true });
 
   // Attach to sidebar itself (for swipe left to close)
   sidebar.addEventListener('touchstart', handleSidebarTouchStart, { passive: true });
   sidebar.addEventListener('touchmove', handleSidebarTouchMove, { passive: true });
   sidebar.addEventListener('touchend', handleSidebarTouchEnd, { passive: true });
+  sidebar.addEventListener('touchcancel', handleSidebarTouchCancel, { passive: true });
 
   // Listen on document for overlay swipes and edge swipes
   document.addEventListener('touchstart', (e) => {
@@ -803,6 +834,7 @@ function setupTouchGestures(): void {
 
   document.addEventListener('touchmove', handleSidebarTouchMove, { passive: true });
   document.addEventListener('touchend', handleSidebarTouchEnd, { passive: true });
+  document.addEventListener('touchcancel', handleSidebarTouchCancel, { passive: true });
 
   // Close swipe on outside touch
   document.addEventListener('touchstart', (e) => {
