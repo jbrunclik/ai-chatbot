@@ -63,6 +63,16 @@ This file tracks planned features, improvements, and technical debt.
 
 ## Technical Debt
 
+### 🔴 Connection Resilience (Slow/Unreliable Networks)
+- [ ] **Save streaming responses on connection failure** - If SSE connection drops mid-stream, the assistant's partial response is lost (user message saved, assistant message not). Server should save responses incrementally or persist partial responses in a cleanup handler.
+- [ ] **Push title updates in streaming `done` event** - The `done` SSE event only contains `{id, created_at}`, not the auto-generated title. Client must make separate API call to fetch title, which can fail. Include title in `done` event.
+- [ ] **Add retry logic for failed API calls** - Frontend should automatically retry failed requests (conversations list, message send, title refresh) with exponential backoff.
+- [ ] **Detect and handle offline state** - Show offline indicator when network is unavailable. Queue messages locally and sync when connection returns.
+- [ ] **Handle partial file uploads** - Large file uploads can fail mid-transfer. Consider chunked uploads with resume capability, or at minimum show clear error and allow retry.
+- [ ] **Add connection quality indicator** - Show visual feedback when connection is slow (e.g., SSE keepalives arriving but no tokens for extended period).
+- [ ] **Handle stale JWT on reconnect** - If user's connection drops and reconnects after JWT expires, gracefully prompt re-auth instead of failing silently.
+- [ ] **Persist unsent messages locally** - If send fails, keep message in input field or local storage so user doesn't lose their text.
+
 ### 🔴 Critical / High Priority
 - [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
 - [ ] **Add comprehensive test suite** - No tests exist. Create `tests/` directory with unit, integration, and e2e tests for auth, API, agent, and frontend.
