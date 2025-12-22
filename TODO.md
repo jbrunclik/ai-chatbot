@@ -24,7 +24,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
 - [ ] **Stop button for streaming** - Transform send button into stop button during streaming to allow interrupting responses
 - [ ] **Thinking mode toggle** - Allow enabling Gemini thinking mode with configurable level (minimal/low/medium/high) using long-press UI similar to voice input language selector
-- [ ] **Show search sources** - Display internet sources used by web_search tool in a user-friendly format (cards/links below the response)
+- [x] **Show search sources** - Display internet sources used by web_search tool in a popup accessible via message actions button
 
 ## Phase 3 - Tools & Extensions
 - [x] **Tool framework** - Extensible system for adding agent tools

@@ -741,7 +741,7 @@ body {
 }
 
 .message-copy-btn:hover {
-    color: var(--text-primary);
+    color: var(--accent);
     background-color: var(--bg-tertiary);
 }
 
@@ -1761,5 +1761,209 @@ body {
 
     .version-banner-message {
         width: 100%;
+    }
+}
+
+/* Sources button (in message actions) */
+.message-sources-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+}
+
+.message-sources-btn:hover {
+    color: var(--accent);
+    background-color: var(--bg-tertiary);
+}
+
+.message-sources-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Sources Popup */
+.sources-popup {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.8);
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+.sources-popup.hidden {
+    display: none;
+}
+
+.sources-popup-content {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    max-width: 500px;
+    width: 100%;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.sources-popup-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    background-color: var(--bg-tertiary);
+}
+
+.sources-popup-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent);
+}
+
+.sources-popup-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.sources-popup-header h3 {
+    flex: 1;
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sources-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 20px;
+    padding: 0 8px;
+    background-color: var(--accent);
+    color: white;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.sources-popup-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+}
+
+.sources-popup-close:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+}
+
+.sources-popup-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.sources-list {
+    padding: 8px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.source-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.15s;
+    border: 1px solid transparent;
+}
+
+.source-item:hover {
+    background-color: var(--bg-tertiary);
+    border-color: var(--border);
+}
+
+.source-number {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--accent);
+    color: white;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.source-title {
+    flex: 1;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.source-url {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    opacity: 0.7;
+    margin-top: 3px;
+}
+
+/* Mobile adjustments for sources popup */
+@media (max-width: 768px) {
+    .sources-popup {
+        padding: 8px;
+        align-items: flex-end;
+    }
+
+    .sources-popup-content {
+        max-height: 70vh;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        margin-bottom: env(safe-area-inset-bottom, 0);
+    }
+
+    .source-item {
+        flex-wrap: wrap;
+    }
+
+    .source-url {
+        width: 100%;
+        margin-left: 36px;
+        margin-top: 4px;
     }
 }
