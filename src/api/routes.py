@@ -7,7 +7,7 @@ from typing import Any
 
 from flask import Blueprint, Response, request
 
-from src.agent.chat_agent import ChatAgent, generate_title
+from src.agent.chat_agent import ChatAgent, extract_metadata_from_response, generate_title
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
@@ -197,15 +197,17 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
                 }
                 optimized_files.append(optimized_file)
 
-        optimized_messages.append(
-            {
-                "id": m.id,
-                "role": m.role,
-                "content": m.content,
-                "files": optimized_files,
-                "created_at": m.created_at.isoformat(),
-            }
-        )
+        msg_data: dict[str, Any] = {
+            "id": m.id,
+            "role": m.role,
+            "content": m.content,
+            "files": optimized_files,
+            "created_at": m.created_at.isoformat(),
+        }
+        if m.sources:
+            msg_data["sources"] = m.sources
+
+        optimized_messages.append(msg_data)
 
     return {
         "id": conv.id,
@@ -294,25 +296,35 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
 
     # Create agent and get response
     agent = ChatAgent(model_name=conv.model)
-    response, new_state = agent.chat_with_state(
+    raw_response, new_state = agent.chat_with_state(
         message_text, files, previous_state, force_tools=force_tools
     )
 
-    # Save response and state
-    assistant_msg = db.add_message(conv_id, "assistant", response)
+    # Extract metadata (sources) from response
+    clean_response, metadata = extract_metadata_from_response(raw_response)
+    sources = metadata.get("sources", []) if metadata else []
+
+    # Save response and state (with clean content, without metadata block)
+    assistant_msg = db.add_message(
+        conv_id, "assistant", clean_response, sources=sources if sources else None
+    )
     db.save_agent_state(conv_id, new_state)
 
     # Auto-generate title from first message if still default
     if conv.title == "New Conversation":
-        new_title = generate_title(message_text, response)
+        new_title = generate_title(message_text, clean_response)
         db.update_conversation(conv_id, user.id, title=new_title)
 
-    return {
+    response_data: dict[str, Any] = {
         "id": assistant_msg.id,
         "role": "assistant",
-        "content": response,
+        "content": clean_response,
         "created_at": assistant_msg.created_at.isoformat(),
-    }, 200
+    }
+    if sources:
+        response_data["sources"] = sources
+
+    return response_data, 200
 
 
 @api.route("/conversations/<conv_id>/chat/stream", methods=["POST"])
@@ -365,28 +377,34 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         Uses a separate thread to stream LLM tokens into a queue, while the main
         generator loop sends keepalives when no tokens are available. This prevents
         proxy timeouts during the LLM's "thinking" phase before tokens start flowing.
+
+        The stream_chat generator yields:
+        - str: individual text tokens
+        - tuple[str, list]: final (clean_content, sources) after all tokens
         """
         agent = ChatAgent(model_name=conv.model)
-        full_response = ""
-        token_queue: queue.Queue[str | None | Exception] = queue.Queue()
-        stream_done = threading.Event()
+        token_queue: queue.Queue[str | tuple[str, list[dict[str, str]]] | None | Exception] = (
+            queue.Queue()
+        )
 
         def stream_tokens() -> None:
             """Background thread that streams tokens into the queue."""
             try:
-                for token in agent.stream_chat(
+                for item in agent.stream_chat(
                     message_text, files, history, force_tools=force_tools
                 ):
-                    token_queue.put(token)
+                    token_queue.put(item)
                 token_queue.put(None)  # Signal completion
             except Exception as e:
                 token_queue.put(e)  # Signal error
-            finally:
-                stream_done.set()
 
         # Start streaming in background thread
         stream_thread = threading.Thread(target=stream_tokens, daemon=True)
         stream_thread.start()
+
+        # Variables to capture final content and sources
+        clean_content = ""
+        sources: list[dict[str, str]] = []
 
         try:
             while True:
@@ -401,9 +419,11 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                         # Error occurred
                         yield f"data: {json.dumps({'type': 'error', 'message': str(item)})}\n\n"
                         return
+                    elif isinstance(item, tuple):
+                        # Final tuple with (clean_content, sources)
+                        clean_content, sources = item
                     else:
-                        # Got a token
-                        full_response += item
+                        # Got a token string - yield to frontend
                         yield f"data: {json.dumps({'type': 'token', 'text': item})}\n\n"
 
                 except queue.Empty:
@@ -411,15 +431,26 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                     # SSE comments start with ":" and are ignored by clients
                     yield ": keepalive\n\n"
 
-            # Save complete response to DB
-            assistant_msg = db.add_message(conv_id, "assistant", full_response)
+            # Save complete response to DB (with sources)
+            assistant_msg = db.add_message(
+                conv_id, "assistant", clean_content, sources=sources if sources else None
+            )
 
             # Auto-generate title from first message if still default
             if conv.title == "New Conversation":
-                new_title = generate_title(message_text, full_response)
+                new_title = generate_title(message_text, clean_content)
                 db.update_conversation(conv_id, user.id, title=new_title)
 
-            yield f"data: {json.dumps({'type': 'done', 'id': assistant_msg.id, 'created_at': assistant_msg.created_at.isoformat()})}\n\n"
+            # Build done event with sources if present
+            done_data: dict[str, Any] = {
+                "type": "done",
+                "id": assistant_msg.id,
+                "created_at": assistant_msg.created_at.isoformat(),
+            }
+            if sources:
+                done_data["sources"] = sources
+
+            yield f"data: {json.dumps(done_data)}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"

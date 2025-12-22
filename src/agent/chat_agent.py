@@ -38,6 +38,8 @@ Components:
           Also includes metadata like 'extras', 'signature' which are skipped
 """
 
+import json
+import re
 from collections.abc import Generator
 from datetime import datetime
 from typing import Annotated, Any, Literal, TypedDict, cast
@@ -82,7 +84,7 @@ BASE_SYSTEM_PROMPT = """You are a helpful, harmless, and honest AI assistant.
 TOOLS_SYSTEM_PROMPT = """
 # Tools Available
 You have access to web tools for real-time information:
-- **web_search**: Search the web for current information, news, prices, events, etc.
+- **web_search**: Search the web for current information, news, prices, events, etc. Returns JSON with results.
 - **fetch_url**: Fetch and read the content of a specific web page.
 
 # When to Use Tools
@@ -98,7 +100,22 @@ Do NOT rely on training data for time-sensitive information.
 
 # Knowledge Cutoff
 Your training data has a cutoff date. For anything after that, use web_search.
-When citing information from searches, mention the source."""
+
+# Response Metadata
+When you use web tools (web_search or fetch_url), you MUST append metadata at the very end of your response.
+Use this exact format with the special markers:
+
+<!-- METADATA:
+{"sources": [{"title": "Source Title", "url": "https://example.com"}]}
+-->
+
+Rules:
+- Include ALL sources you referenced: both from web_search results AND any URLs you fetched with fetch_url
+- Only include sources you actually used information from in your response
+- Do NOT include this section if you didn't use any web tools
+- The JSON must be valid - use double quotes, escape special characters
+- Each source needs "title" and "url" fields
+- For fetch_url sources, use the page title (or URL domain if unknown) as the title"""
 
 
 def get_force_tools_prompt(force_tools: list[str]) -> str:
@@ -170,6 +187,46 @@ def extract_text_content(content: str | list[Any] | dict[str, Any]) -> str:
         return "".join(text_parts)
 
     return str(content)
+
+
+# Pattern to match metadata block: <!-- METADATA:\n{...}\n-->
+METADATA_PATTERN = re.compile(
+    r"<!--\s*METADATA:\s*\n(.*?)\n\s*-->",
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def extract_metadata_from_response(response: str) -> tuple[str, dict[str, Any]]:
+    """Extract metadata from LLM response and return clean content.
+
+    The LLM is instructed to append metadata at the end of responses in the format:
+    <!-- METADATA:
+    {"sources": [...]}
+    -->
+
+    Args:
+        response: The raw LLM response text
+
+    Returns:
+        Tuple of (clean_content, metadata_dict)
+        - clean_content: Response with metadata block removed
+        - metadata_dict: Parsed metadata (empty dict if none found or parse error)
+    """
+    match = METADATA_PATTERN.search(response)
+    if not match:
+        return response, {}
+
+    try:
+        metadata_json = match.group(1).strip()
+        metadata = json.loads(metadata_json)
+
+        # Remove the metadata block from the response
+        clean_content = response[: match.start()].rstrip()
+
+        return clean_content, metadata
+    except (json.JSONDecodeError, AttributeError):
+        # If parsing fails, return original response with empty metadata
+        return response, {}
 
 
 class AgentState(TypedDict):
@@ -384,7 +441,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
-    ) -> Generator[str, None, None]:
+    ) -> Generator[str | tuple[str, list[dict[str, str]]], None, None]:
         """
         Stream response tokens using LangGraph's stream method.
 
@@ -395,9 +452,18 @@ class ChatAgent:
             force_tools: Optional list of tool names that must be used
 
         Yields:
-            Text tokens as they are generated
+            Text tokens as they are generated.
+            The final yield is a tuple of (full_content, sources) after metadata extraction.
         """
         messages = self._build_messages(text, files, history, force_tools=force_tools)
+
+        # Accumulate full response to extract metadata at the end
+        full_response = ""
+        # Buffer to detect metadata marker - we hold back chars until we're sure
+        # they're not part of the metadata marker
+        buffer = ""
+        metadata_marker = "<!-- METADATA:"
+        in_metadata = False
 
         # Stream the graph execution with messages mode for token-level streaming
         for event in self.graph.stream(
@@ -415,7 +481,43 @@ class ChatAgent:
                     if message_chunk.content:
                         content = extract_text_content(message_chunk.content)
                         if content:
-                            yield content
+                            full_response += content
+
+                            # If we've detected metadata, don't yield anything more
+                            if in_metadata:
+                                continue
+
+                            # Add to buffer and check for metadata marker
+                            buffer += content
+
+                            # Check if buffer contains the start of metadata
+                            if metadata_marker in buffer:
+                                # Yield everything before the marker
+                                marker_pos = buffer.find(metadata_marker)
+                                if marker_pos > 0:
+                                    yield buffer[:marker_pos].rstrip()
+                                in_metadata = True
+                                buffer = ""
+                            elif len(buffer) > len(metadata_marker):
+                                # Buffer is longer than marker, safe to yield the excess
+                                safe_length = len(buffer) - len(metadata_marker)
+                                yield buffer[:safe_length]
+                                buffer = buffer[safe_length:]
+
+        # Yield any remaining buffer that's not metadata
+        if buffer and not in_metadata:
+            # Final check - might end with partial marker
+            if not buffer.rstrip().endswith("<!--"):
+                clean, _ = extract_metadata_from_response(buffer)
+                if clean:
+                    yield clean
+
+        # Extract metadata and yield final result with sources
+        clean_content, metadata = extract_metadata_from_response(full_response)
+        sources = metadata.get("sources", [])
+
+        # Yield final tuple with clean content and sources
+        yield (clean_content, sources)
 
     def chat_with_state(
         self,

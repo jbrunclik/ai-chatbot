@@ -85,8 +85,10 @@ def web_search(query: str, num_results: int = 5) -> str:
         num_results: Number of results to return (default 5, max 10)
 
     Returns:
-        A list of search results with title, URL, and snippet
+        JSON string with query and results array containing title, url, and snippet
     """
+    import json
+
     num_results = min(max(1, num_results), 10)
 
     try:
@@ -94,18 +96,21 @@ def web_search(query: str, num_results: int = 5) -> str:
             results = list(ddgs.text(query, max_results=num_results))
 
         if not results:
-            return f"No results found for '{query}'"
+            return json.dumps({"query": query, "results": [], "error": "No results found"})
 
-        output = f"Search results for '{query}':\n\n"
-        for i, r in enumerate(results, 1):
-            output += f"{i}. **{r.get('title', 'No title')}**\n"
-            output += f"   URL: {r.get('href', 'No URL')}\n"
-            output += f"   {r.get('body', 'No description')}\n\n"
+        search_results = [
+            {
+                "title": r.get("title", "No title"),
+                "url": r.get("href", ""),
+                "snippet": r.get("body", ""),
+            }
+            for r in results
+        ]
 
-        return output
+        return json.dumps({"query": query, "results": search_results})
 
     except Exception as e:
-        return f"Error searching for '{query}': {e}"
+        return json.dumps({"query": query, "results": [], "error": str(e)})
 
 
 # List of all available tools for the agent

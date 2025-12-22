@@ -160,6 +160,36 @@ The `forceTools` state in Zustand allows forcing specific tools to be used. Curr
 - Backend: `force_tools` parameter in `/chat/batch` and `/chat/stream` endpoints
 - Agent: `get_force_tools_prompt()` in [chat_agent.py](src/agent/chat_agent.py)
 
+## Web Search Sources
+
+When the LLM uses `web_search` or `fetch_url` tools, it cites sources that are displayed to the user.
+
+### How it works
+1. **Tool returns JSON**: `web_search` returns `{"query": "...", "results": [{title, url, snippet}, ...]}` instead of plain text
+2. **LLM appends metadata**: System prompt instructs LLM to append `<!-- METADATA:\n{"sources": [...]}\n-->` at the end of responses when web tools are used
+3. **Backend extracts sources**: `extract_metadata_from_response()` in [chat_agent.py](src/agent/chat_agent.py) parses and strips the metadata block
+4. **Streaming filters metadata**: During streaming, the metadata marker is detected and not sent to the frontend
+5. **Sources stored in DB**: Messages table has a `sources` column (JSON array)
+6. **Sources in API response**: Both batch and streaming responses include `sources` array
+7. **UI shows sources button**: A globe icon appears in message actions when sources exist, opening a popup with clickable links
+
+### Key files
+- [tools.py](src/agent/tools.py) - `web_search()` returns structured JSON
+- [chat_agent.py](src/agent/chat_agent.py) - `TOOLS_SYSTEM_PROMPT`, `extract_metadata_from_response()`, streaming filter
+- [models.py](src/db/models.py) - `Message.sources` field, `add_message()` with sources param
+- [routes.py](src/api/routes.py) - Sources included in batch/stream responses
+- [SourcesPopup.ts](web/src/components/SourcesPopup.ts) - Popup component
+- [Messages.ts](web/src/components/Messages.ts) - Sources button rendering
+
+### Metadata format
+```
+<!-- METADATA:
+{"sources": [{"title": "Source Title", "url": "https://..."}]}
+-->
+```
+
+The metadata block is always at the end of the LLM response and is stripped before storing/displaying content.
+
 ## Voice Input
 
 Voice input uses the Web Speech API (`SpeechRecognition`) in [VoiceInput.ts](web/src/components/VoiceInput.ts):

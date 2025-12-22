@@ -33,6 +33,7 @@ import {
 import { initModelSelector, renderModelDropdown } from './components/ModelSelector';
 import { initFileUpload, clearPendingFiles, getPendingFiles } from './components/FileUpload';
 import { initLightbox } from './components/Lightbox';
+import { initSourcesPopup } from './components/SourcesPopup';
 import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
 import { initScrollToBottom } from './components/ScrollToBottom';
 import { initVersionBanner } from './components/VersionBanner';
@@ -128,6 +129,13 @@ function renderAppShell(): string {
       </div>
     </div>
 
+    <!-- Sources Popup -->
+    <div id="sources-popup" class="sources-popup hidden">
+      <div class="sources-popup-content">
+        <!-- Content populated dynamically -->
+      </div>
+    </div>
+
     <!-- Login overlay -->
     <div id="login-overlay" class="login-overlay hidden">
       <div class="login-box">
@@ -153,6 +161,7 @@ async function init(): Promise<void> {
   initFileUpload();
   initVoiceInput();
   initLightbox();
+  initSourcesPopup();
   initScrollToBottom();
   initVersionBanner();
   setupEventListeners();
@@ -441,7 +450,7 @@ async function sendStreamingMessage(
         fullContent += event.text;
         updateStreamingMessage(messageEl, fullContent);
       } else if (event.type === 'done') {
-        finalizeStreamingMessage(messageEl, event.id, event.created_at);
+        finalizeStreamingMessage(messageEl, event.id, event.created_at, event.sources);
 
         // Update conversation title if this was the first message
         await refreshConversationTitle(convId);
@@ -474,6 +483,7 @@ async function sendBatchMessage(
       id: response.id,
       role: 'assistant',
       content: response.content,
+      sources: response.sources,
       created_at: response.created_at,
     };
 

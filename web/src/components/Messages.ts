@@ -2,9 +2,9 @@ import { escapeHtml, getElementById, scrollToBottom, isScrolledToBottom } from '
 import { renderMarkdown, highlightAllCodeBlocks } from '../utils/markdown';
 import { observeThumbnail } from '../utils/thumbnails';
 import { createUserAvatarElement } from '../utils/avatar';
-import { AI_AVATAR_SVG, getFileIcon, DOWNLOAD_ICON, COPY_ICON } from '../utils/icons';
+import { AI_AVATAR_SVG, getFileIcon, DOWNLOAD_ICON, COPY_ICON, SOURCES_ICON } from '../utils/icons';
 import { useStore } from '../state/store';
-import type { Message, FileMetadata } from '../types/api';
+import type { Message, FileMetadata, Source } from '../types/api';
 
 /**
  * Format a timestamp for display using system locale
@@ -121,16 +121,31 @@ export function addMessageToUI(
     contentWrapper.appendChild(content);
   }
 
-  // Add message actions (timestamp + copy button)
+  // Add message actions (timestamp + sources button + copy button)
   const actions = document.createElement('div');
   actions.className = 'message-actions';
   const timeStr = message.created_at ? formatMessageTime(message.created_at) : '';
+  const hasSources = message.sources && message.sources.length > 0;
   actions.innerHTML = `
     ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
+    ${hasSources ? `<button class="message-sources-btn" title="View sources (${message.sources!.length})">${SOURCES_ICON}</button>` : ''}
     <button class="message-copy-btn" title="Copy message">
       ${COPY_ICON}
     </button>
   `;
+
+  // Add sources button click handler
+  if (hasSources) {
+    const sourcesBtn = actions.querySelector('.message-sources-btn');
+    sourcesBtn?.addEventListener('click', () => {
+      window.dispatchEvent(
+        new CustomEvent('sources:open', {
+          detail: { sources: message.sources },
+        })
+      );
+    });
+  }
+
   contentWrapper.appendChild(actions);
 
   messageEl.appendChild(contentWrapper);
@@ -286,7 +301,8 @@ export function updateStreamingMessage(
 export function finalizeStreamingMessage(
   messageEl: HTMLElement,
   messageId: string,
-  createdAt?: string
+  createdAt?: string,
+  sources?: Source[]
 ): void {
   messageEl.classList.remove('streaming');
   messageEl.dataset.messageId = messageId;
@@ -301,18 +317,33 @@ export function finalizeStreamingMessage(
     highlightAllCodeBlocks(content as HTMLElement);
   }
 
-  // Add message actions (timestamp + copy button)
+  // Add message actions (timestamp + sources button + copy button)
   const contentWrapper = messageEl.querySelector('.message-content-wrapper');
   if (contentWrapper && !contentWrapper.querySelector('.message-actions')) {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
     const timeStr = createdAt ? formatMessageTime(createdAt) : '';
+    const hasSources = sources && sources.length > 0;
     actions.innerHTML = `
       ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
+      ${hasSources ? `<button class="message-sources-btn" title="View sources (${sources!.length})">${SOURCES_ICON}</button>` : ''}
       <button class="message-copy-btn" title="Copy message">
         ${COPY_ICON}
       </button>
     `;
+
+    // Add sources button click handler
+    if (hasSources) {
+      const sourcesBtn = actions.querySelector('.message-sources-btn');
+      sourcesBtn?.addEventListener('click', () => {
+        window.dispatchEvent(
+          new CustomEvent('sources:open', {
+            detail: { sources },
+          })
+        );
+      });
+    }
+
     contentWrapper.appendChild(actions);
   }
 }

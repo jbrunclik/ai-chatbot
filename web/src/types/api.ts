@@ -19,12 +19,19 @@ export interface Conversation {
   messages?: Message[];
 }
 
+// Source types (for web search results)
+export interface Source {
+  title: string;
+  url: string;
+}
+
 // Message types
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   files?: FileMetadata[];
+  sources?: Source[];
   created_at: string;
 }
 
@@ -60,7 +67,7 @@ export interface UploadConfig {
 // Streaming response events
 export type StreamEvent =
   | { type: 'token'; text: string }
-  | { type: 'done'; id: string; created_at: string }
+  | { type: 'done'; id: string; created_at: string; sources?: Source[] }
   | { type: 'error'; message: string };
 
 // API response types
@@ -82,6 +89,7 @@ export interface ChatResponse {
   id: string;
   role: 'assistant';
   content: string;
+  sources?: Source[];
   created_at: string;
 }
 
