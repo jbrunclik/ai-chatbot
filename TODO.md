@@ -22,6 +22,9 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Show message timestamps** - Display message timestamps on hover (locale-aware formatting)
 - [x] **Scroll to bottom button** - Floating button to jump to latest messages when scrolled up
 - [ ] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
+- [ ] **Stop button for streaming** - Transform send button into stop button during streaming to allow interrupting responses
+- [ ] **Thinking mode toggle** - Allow enabling Gemini thinking mode with configurable level (minimal/low/medium/high) using long-press UI similar to voice input language selector
+- [ ] **Show search sources** - Display internet sources used by web_search tool in a user-friendly format (cards/links below the response)
 
 ## Phase 3 - Tools & Extensions
 - [x] **Tool framework** - Extensible system for adding agent tools
@@ -100,6 +103,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Add database connectivity check** - Verify database is accessible at startup with clear error message
 
 ### 🔵 Frontend Performance & UX
+- [ ] **iPad Safari keyboard bar gap** - When focusing input on iPad with external keyboard, the system keyboard accessory bar pushes content up, revealing a gap below the app. CSS cannot paint outside the viewport iOS reveals. Need to investigate workarounds.
 - [ ] **Replace native browser dialogs** - Replace `alert()`, `confirm()`, and `prompt()` with custom modal components for better UX
 - [x] **Frontend bundle optimization** - Migrated to Vite, bundles marked.js and highlight.js from npm
 - [ ] **Add service worker** - Implement service worker for offline support and better caching

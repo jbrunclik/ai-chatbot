@@ -442,9 +442,11 @@ export function isVoiceRecording(): boolean {
 
 /**
  * Stop recording if active
+ * Uses abort() instead of stop() to discard any pending results,
+ * preventing transcribed text from being re-added after input is cleared
  */
 export function stopVoiceRecording(): void {
   if (isRecording && recognition) {
-    recognition.stop();
+    recognition.abort();
   }
 }

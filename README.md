@@ -15,6 +15,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - **Copy messages**: One-click copy button on messages (excludes file attachments)
 - Google Sign In authentication with email whitelist
 - Modern dark theme, mobile-first responsive design
+- **Voice input**: Speech-to-text using Web Speech API (Chrome, Safari), with language selection
 - **Touch gestures**: Swipe left on conversations to delete, swipe from left edge to open sidebar
 - iOS Safari and PWA compatible
 - Local development mode (no auth required)

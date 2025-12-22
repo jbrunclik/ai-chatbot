@@ -31,6 +31,7 @@ export interface SwipeHandlers {
   handleTouchStart: (e: TouchEvent) => void;
   handleTouchMove: (e: TouchEvent) => void;
   handleTouchEnd: (e: TouchEvent) => boolean;
+  handleTouchCancel: () => void;
 }
 
 /**
@@ -141,7 +142,17 @@ export function createSwipeHandler(config: SwipeConfig): SwipeHandlers {
     return handled;
   };
 
-  return { handleTouchStart, handleTouchMove, handleTouchEnd };
+  // Handle touch cancel (iOS Safari can cancel touches during gestures)
+  const handleTouchCancel = (): void => {
+    if (swipeTarget) {
+      swipeTarget.style.transform = '';
+      swipeTarget.style.transition = '';
+    }
+    swipeTarget = null;
+    isSwiping = false;
+  };
+
+  return { handleTouchStart, handleTouchMove, handleTouchEnd, handleTouchCancel };
 }
 
 /**
