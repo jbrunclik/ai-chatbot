@@ -32,6 +32,11 @@ interface AppState {
   pendingFiles: FileUpload[];
   uploadConfig: UploadConfig;
 
+  // Version tracking
+  appVersion: string | null;
+  newVersionAvailable: boolean;
+  versionBannerDismissed: boolean;
+
   // Actions - Auth
   setToken: (token: string | null) => void;
   setUser: (user: User | null) => void;
@@ -61,6 +66,11 @@ interface AppState {
   removePendingFile: (index: number) => void;
   clearPendingFiles: () => void;
   setUploadConfig: (config: UploadConfig) => void;
+
+  // Actions - Version
+  setAppVersion: (version: string | null) => void;
+  setNewVersionAvailable: (available: boolean) => void;
+  dismissVersionBanner: () => void;
 }
 
 const DEFAULT_UPLOAD_CONFIG: UploadConfig = {
@@ -96,6 +106,9 @@ export const useStore = create<AppState>()(
       forceTools: [],
       pendingFiles: [],
       uploadConfig: DEFAULT_UPLOAD_CONFIG,
+      appVersion: null,
+      newVersionAvailable: false,
+      versionBannerDismissed: false,
 
       // Auth actions
       setToken: (token) => set({ token }),
@@ -163,6 +176,11 @@ export const useStore = create<AppState>()(
         })),
       clearPendingFiles: () => set({ pendingFiles: [] }),
       setUploadConfig: (uploadConfig) => set({ uploadConfig }),
+
+      // Version actions
+      setAppVersion: (appVersion) => set({ appVersion }),
+      setNewVersionAvailable: (newVersionAvailable) => set({ newVersionAvailable }),
+      dismissVersionBanner: () => set({ versionBannerDismissed: true }),
     }),
     {
       name: 'ai-chatbot-storage',

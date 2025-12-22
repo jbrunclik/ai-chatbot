@@ -35,6 +35,7 @@ import { initFileUpload, clearPendingFiles, getPendingFiles } from './components
 import { initLightbox } from './components/Lightbox';
 import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
 import { initScrollToBottom } from './components/ScrollToBottom';
+import { initVersionBanner } from './components/VersionBanner';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
 import { getElementById } from './utils/dom';
 import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, PLUS_ICON } from './utils/icons';
@@ -153,6 +154,7 @@ async function init(): Promise<void> {
   initVoiceInput();
   initLightbox();
   initScrollToBottom();
+  initVersionBanner();
   setupEventListeners();
   setupTouchGestures();
 

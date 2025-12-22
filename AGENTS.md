@@ -50,7 +50,8 @@ ai-chatbot/
 │       │   ├── FileUpload.ts     # File handling, base64
 │       │   ├── VoiceInput.ts     # Speech-to-text input
 │       │   ├── Lightbox.ts       # Image viewer
-│       │   └── ScrollToBottom.ts # Scroll-to-bottom button
+│       │   ├── ScrollToBottom.ts # Scroll-to-bottom button
+│       │   └── VersionBanner.ts  # New version notification
 │       ├── gestures/swipe.ts     # Touch handlers
 │       ├── utils/
 │       │   ├── dom.ts            # DOM helpers, escapeHtml
@@ -216,6 +217,29 @@ When working on mobile/PWA features, beware of these iOS Safari issues:
 - Native browser lazy loading (`loading="lazy"`) is used for all images
 - Parallel fetching: Up to 6 missing images fetch concurrently when they come into viewport
 
+## Version Update Banner
+
+The app detects when a new version is deployed and shows a banner prompting users to reload.
+
+### How it works
+1. **Version source**: The Vite JS bundle hash (e.g., `main-y-VVsbiY.js` → `y-VVsbiY`) serves as the version identifier
+2. **Initial load**: Flask extracts the version from the Vite manifest and injects it into the HTML via `data-version` attribute on `#app`
+3. **Periodic polling**: Frontend polls `GET /api/version` every 5 minutes (no auth required)
+4. **PWA awareness**: Polling pauses when tab is hidden (`document.visibilitychange`), checks immediately on refocus if >5 min since last check
+5. **Dismiss persistence**: Dismissed versions are stored in localStorage to avoid re-showing the same banner
+
+### Key files
+- [app.py](src/app.py) - Extracts version hash from manifest, stores in `app.config["APP_VERSION"]`
+- [routes.py](src/api/routes.py) - `GET /api/version` endpoint
+- [VersionBanner.ts](web/src/components/VersionBanner.ts) - Banner component and polling logic
+- [store.ts](web/src/state/store.ts) - `appVersion`, `newVersionAvailable`, `versionBannerDismissed` state
+
+### Testing locally
+In development mode, the version will be `null` (no manifest). Use the test helper in browser console:
+```javascript
+window.__testVersionBanner()
+```
+
 ## Common Tasks
 
 ### Add a new API endpoint
@@ -246,6 +270,8 @@ When making significant changes to the codebase:
 1. Update [README.md](README.md) if user-facing features change
 2. Update this file (CLAUDE.md) if architecture, code patterns, or developer workflows change
 3. Update [TODO.md](TODO.md) to mark completed items or add new planned work
+
+**Important**: When implementing a new feature, always update documentation as part of the commit - don't wait to be asked. For significant features, add a dedicated section to CLAUDE.md explaining how it works, key files, and any testing/debugging tips.
 
 ---
 

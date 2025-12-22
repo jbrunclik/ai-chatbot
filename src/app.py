@@ -28,6 +28,18 @@ def create_app() -> Flask:
         with open(manifest_path) as f:
             vite_manifest = json.load(f)
 
+    # Extract app version from manifest (JS bundle hash)
+    app_version: str | None = None
+    if vite_manifest:
+        main_entry = vite_manifest.get("src/main.ts", {})
+        js_file = str(main_entry.get("file", ""))
+        # Extract hash: "assets/main-y-VVsbiY.js" -> "y-VVsbiY"
+        if "-" in js_file and js_file.endswith(".js"):
+            app_version = js_file.rsplit("-", 1)[1].replace(".js", "")
+
+    # Store version in app config for access by routes
+    app.config["APP_VERSION"] = app_version
+
     @app.route("/")
     def index() -> str | tuple[str, int]:
         js_file: str | None = None
@@ -51,6 +63,7 @@ def create_app() -> Flask:
             js_file=js_file,
             css_file=css_file,
             dev_mode=dev_mode,
+            app_version=app_version,
         )
 
     # Serve static files
