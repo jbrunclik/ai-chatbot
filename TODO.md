@@ -21,7 +21,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] Mobile gesture support (swipe to open sidebar, swipe to delete conversations)
 - [x] **Show message timestamps** - Display message timestamps on hover (locale-aware formatting)
 - [x] **Scroll to bottom button** - Floating button to jump to latest messages when scrolled up
-- [ ] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
+- [x] **Version update banner** - Show banner to user when new version is available, prompting to reload the page
 - [ ] **Stop button for streaming** - Transform send button into stop button during streaming to allow interrupting responses
 - [ ] **Thinking mode toggle** - Allow enabling Gemini thinking mode with configurable level (minimal/low/medium/high) using long-press UI similar to voice input language selector
 - [ ] **Show search sources** - Display internet sources used by web_search tool in a user-friendly format (cards/links below the response)
@@ -101,6 +101,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Remove console.log statements** - Implement structured frontend logging (console statements remain for debugging)
 - [ ] **Reduce innerHTML usage** - Heavy reliance on innerHTML; prefer textContent and createElement where possible
 - [ ] **Audit unused CSS classes** - After TypeScript migration, review and remove unused CSS classes from main.css
+- [ ] **Create design system / color palette** - Consolidate purple/blue shades into named CSS variables. Currently using multiple similar colors: `--accent` (#6366f1), `--accent-hover` (#818cf8), `--user-bg` (#2563eb), version banner (#3730a3, #1e1b4b), assistant avatar gradient. Define a consistent palette with semantic names.
 
 ### 🟢 Database
 - [ ] **Database connection pooling** - Consider connection pooling for SQLite (though SQLite has limitations)

@@ -88,3 +88,7 @@ export interface ChatResponse {
 export interface ErrorResponse {
   error: string;
 }
+
+export interface VersionResponse {
+  version: string | null;
+}

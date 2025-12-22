@@ -9,6 +9,7 @@ import type {
   StreamEvent,
   UploadConfig,
   User,
+  VersionResponse,
 } from '../types/api';
 
 class ApiError extends Error {
@@ -259,6 +260,14 @@ export const files = {
     }
 
     return response.blob();
+  },
+};
+
+// Version endpoint (no auth required)
+export const version = {
+  async get(): Promise<VersionResponse> {
+    const response = await fetch('/api/version');
+    return response.json() as Promise<VersionResponse>;
   },
 };
 

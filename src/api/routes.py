@@ -468,6 +468,24 @@ def get_upload_config() -> dict[str, Any]:
 
 
 # ============================================================================
+# Version Routes
+# ============================================================================
+
+
+@api.route("/version", methods=["GET"])
+def get_version() -> dict[str, str | None]:
+    """Get current app version (JS bundle hash).
+
+    This endpoint does not require authentication so version can be
+    checked even before login. Used by frontend to detect when a new
+    version is deployed and prompt users to reload.
+    """
+    from flask import current_app
+
+    return {"version": current_app.config.get("APP_VERSION")}
+
+
+# ============================================================================
 # Image Routes
 # ============================================================================
 

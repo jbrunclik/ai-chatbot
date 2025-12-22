@@ -13,6 +13,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - Model selection (Gemini 3 Pro for complex tasks, Flash for speed)
 - Markdown rendering with syntax highlighting
 - **Copy messages**: One-click copy button on messages (excludes file attachments)
+- **Version update banner**: Automatic detection of new deployments with reload prompt
 - Google Sign In authentication with email whitelist
 - Modern dark theme, mobile-first responsive design
 - **Voice input**: Speech-to-text using Web Speech API (Chrome, Safari), with language selection
