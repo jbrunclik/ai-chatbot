@@ -260,6 +260,7 @@ METADATA_PATTERN = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+
 # Pattern to match Gemini's tool call JSON format that sometimes leaks into response text
 # This happens when the model outputs the tool call description as text alongside the actual tool call
 # Format: {"action": "tool_name", "action_input": "..."} or {"action": "tool_name", "action_input": {...}}
@@ -287,6 +288,43 @@ def clean_tool_call_json(response: str) -> str:
     return TOOL_CALL_JSON_PATTERN.sub("", response).strip()
 
 
+def _find_json_object_end(text: str, start_pos: int) -> int | None:
+    """Find the end position of a complete JSON object starting at start_pos.
+
+    Returns the position after the closing brace, or None if not found.
+    """
+    brace_count = 0
+    in_string = False
+    escape_next = False
+
+    for i in range(start_pos, len(text)):
+        char = text[i]
+
+        if escape_next:
+            escape_next = False
+            continue
+
+        if char == "\\":
+            escape_next = True
+            continue
+
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char == "{":
+            brace_count += 1
+        elif char == "}":
+            brace_count -= 1
+            if brace_count == 0:
+                return i + 1
+
+    return None
+
+
 def extract_metadata_from_response(response: str) -> tuple[str, dict[str, Any]]:
     """Extract metadata from LLM response and return clean content.
 
@@ -294,6 +332,10 @@ def extract_metadata_from_response(response: str) -> tuple[str, dict[str, Any]]:
     <!-- METADATA:
     {"sources": [...]}
     -->
+
+    However, sometimes the LLM outputs plain JSON without the HTML comment wrapper,
+    or outputs it in both formats. This function prefers the HTML comment format,
+    but removes both if they both exist.
 
     Also removes any tool call JSON artifacts that leaked into the response.
 
@@ -305,24 +347,49 @@ def extract_metadata_from_response(response: str) -> tuple[str, dict[str, Any]]:
         - clean_content: Response with metadata block and tool call JSON removed
         - metadata_dict: Parsed metadata (empty dict if none found or parse error)
     """
-    # First, clean up any tool call JSON that leaked into the response
     response = clean_tool_call_json(response)
+    metadata: dict[str, Any] = {}
+    clean_content = response
 
-    match = METADATA_PATTERN.search(response)
-    if not match:
-        return response, {}
+    # Try HTML comment format first (preferred format)
+    match = METADATA_PATTERN.search(clean_content)
+    if match:
+        try:
+            metadata = json.loads(match.group(1).strip())
+            clean_content = clean_content[: match.start()].rstrip()
+        except (json.JSONDecodeError, AttributeError):
+            # If parsing fails, continue to check for plain JSON
+            pass
 
-    try:
-        metadata_json = match.group(1).strip()
-        metadata = json.loads(metadata_json)
+    # Also check for plain JSON metadata and remove it (even if we already found HTML comment)
+    # This ensures we remove both if the LLM outputs metadata in both formats
+    # Search backwards for JSON objects that might contain metadata
+    # We need to find the outermost object, so we search from the end
+    search_start = len(clean_content)
+    while True:
+        # Find the last opening brace before our search start
+        last_brace = clean_content.rfind("{", 0, search_start)
+        if last_brace == -1:
+            break
 
-        # Remove the metadata block from the response
-        clean_content = response[: match.start()].rstrip()
+        end_pos = _find_json_object_end(clean_content, last_brace)
+        if end_pos:
+            try:
+                parsed = json.loads(clean_content[last_brace:end_pos])
+                if "sources" in parsed or "generated_images" in parsed:
+                    # Only use this metadata if we didn't already get it from HTML comment
+                    if not metadata:
+                        metadata = parsed
+                    # Remove the JSON from response regardless
+                    clean_content = clean_content[:last_brace].rstrip()
+                    break
+            except (json.JSONDecodeError, ValueError):
+                pass
 
-        return clean_content, metadata
-    except (json.JSONDecodeError, AttributeError):
-        # If parsing fails, return original response with empty metadata
-        return response, {}
+        # Continue searching backwards from before this brace
+        search_start = last_brace
+
+    return clean_content.rstrip(), metadata
 
 
 class AgentState(TypedDict):
@@ -622,7 +689,7 @@ class ChatAgent:
                             # Add to buffer and check for metadata marker
                             buffer += content
 
-                            # Check if buffer contains the start of metadata
+                            # Check if buffer contains the start of metadata (HTML comment format)
                             if metadata_marker in buffer:
                                 # Yield everything before the marker
                                 marker_pos = buffer.find(metadata_marker)
@@ -638,11 +705,10 @@ class ChatAgent:
 
         # Yield any remaining buffer that's not metadata
         if buffer and not in_metadata:
-            # Final check - might end with partial marker
-            if not buffer.rstrip().endswith("<!--"):
-                clean, _ = extract_metadata_from_response(buffer)
-                if clean:
-                    yield clean
+            # Final check - might end with partial marker or JSON
+            clean, _ = extract_metadata_from_response(buffer)
+            if clean and clean.strip():
+                yield clean
 
         # Extract metadata and yield final tuple
         clean_content, metadata = extract_metadata_from_response(full_response)
