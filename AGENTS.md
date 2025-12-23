@@ -288,6 +288,33 @@ When working on mobile/PWA features, beware of these iOS Safari issues:
 - Native browser lazy loading (`loading="lazy"`) is used for all images
 - Parallel fetching: Up to 6 missing images fetch concurrently when they come into viewport
 
+### Token Usage Optimization
+
+The app implements several optimizations to minimize token costs:
+
+1. **History files excluded**: When building conversation history for the LLM, files (images, PDFs) from previous messages are NOT re-sent. Only the current message's files are included. This prevents large base64 data from being sent repeatedly with every request.
+
+2. **Generated images not sent back to LLM**: When the `generate_image` tool runs, the full image data (~500KB base64) is stored in a `_full_result` field that gets stripped before the tool result goes back to the LLM. The LLM only sees a success confirmation message. This prevents ~650K tokens of base64 from being charged on every image generation.
+
+**How the `_full_result` stripping works:**
+1. `generate_image` tool returns JSON with `_full_result.image` containing the base64 image data
+2. A custom tool node wrapper (`create_tool_node()`) intercepts tool results before they go to the LLM
+3. The wrapper captures the FULL tool results (with `_full_result`) in a global dict keyed by request ID
+4. It then strips `_full_result` from the tool message content before the LLM sees it
+5. After the LLM finishes, the routes layer retrieves the full results using `get_full_tool_results(request_id)`
+6. Images and costs are extracted from the full results for storage and display
+
+**Threading considerations for streaming:**
+- The streaming endpoint uses a background thread for LLM streaming
+- Context variables (used to track request ID) don't automatically inherit to new threads in Python
+- The background thread explicitly calls `set_current_request_id()` to set up its own context
+
+**Implementation details:**
+- [tools.py](src/agent/tools.py) - `generate_image` returns image in `_full_result` field
+- [chat_agent.py](src/agent/chat_agent.py) - `create_tool_node()` wraps ToolNode to strip `_full_result`, `set_current_request_id()` and `get_full_tool_results()` for per-request capture
+- [images.py](src/utils/images.py) - `extract_generated_images_from_tool_results()` extracts images from `_full_result`
+- [routes.py](src/api/routes.py) - Sets request ID before agent call, retrieves full results after, passes to image extraction and cost calculation
+
 ### Scroll-to-Bottom Behavior
 
 The app automatically scrolls to the bottom when loading conversations and when new messages are added, but handles lazy-loaded images specially to avoid scrolling before images have loaded and affected the layout.

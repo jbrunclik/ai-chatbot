@@ -38,6 +38,7 @@ Components:
           Also includes metadata like 'extras', 'signature' which are skipped
 """
 
+import contextvars
 import json
 import re
 from collections.abc import Generator
@@ -55,13 +56,115 @@ from langchain_core.messages import (
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolNode as BaseToolNode
 
 from src.agent.tools import TOOLS
 from src.config import Config
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def strip_full_result_from_tool_content(content: str) -> str:
+    """Strip the _full_result field from tool result JSON to avoid sending large data to LLM.
+
+    The generate_image tool returns image data in a _full_result field that should be
+    extracted server-side but not sent back to the LLM (to avoid ~650K tokens of base64).
+
+    Args:
+        content: The tool result content (JSON string)
+
+    Returns:
+        The content with _full_result removed, or original content if not JSON
+    """
+    try:
+        data = json.loads(content)
+        if isinstance(data, dict) and "_full_result" in data:
+            # Remove the _full_result field before sending to LLM
+            data_for_llm = {k: v for k, v in data.items() if k != "_full_result"}
+            return json.dumps(data_for_llm)
+        return content
+    except (json.JSONDecodeError, TypeError):
+        return content
+
+
+# Contextvar to hold the current request ID for tool result capture
+# This allows us to capture full results per-request without passing request_id through the graph
+_current_request_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_current_request_id", default=None
+)
+
+# Global storage for full tool results before stripping (keyed by thread/request)
+# This allows us to capture the full results for server-side extraction while
+# still stripping them before sending to the LLM
+_full_tool_results: dict[str, list[dict[str, Any]]] = {}
+
+
+def set_current_request_id(request_id: str | None) -> None:
+    """Set the current request ID for tool result capture."""
+    _current_request_id.set(request_id)
+
+
+def get_full_tool_results(request_id: str) -> list[dict[str, Any]]:
+    """Get and clear full tool results for a request."""
+    return _full_tool_results.pop(request_id, [])
+
+
+def create_tool_node(tools: list[Any]) -> Any:
+    """Create a tool node that strips large data from results before sending to LLM.
+
+    This prevents the ~650K token cost of sending generated images back to the model.
+    The full tool results are still captured separately for server-side extraction.
+
+    The request ID is read from the _current_request_id contextvar at runtime,
+    allowing per-request capture while using a single shared graph instance.
+
+    Args:
+        tools: List of tools to use
+    """
+    base_tool_node = BaseToolNode(tools)
+
+    def tool_node_with_stripping(state: AgentState) -> dict[str, Any]:
+        """Execute tools and strip _full_result from results."""
+        logger.debug("tool_node_with_stripping starting")
+
+        # Get the current request ID from contextvar
+        request_id = _current_request_id.get()
+
+        # Call the base ToolNode
+        result: dict[str, Any] = base_tool_node.invoke(state)
+
+        # Capture full tool results BEFORE stripping, then strip for LLM
+        if "messages" in result:
+            for msg in result["messages"]:
+                if isinstance(msg, ToolMessage) and isinstance(msg.content, str):
+                    # Store the ORIGINAL content for server-side extraction
+                    if request_id is not None:
+                        if request_id not in _full_tool_results:
+                            _full_tool_results[request_id] = []
+                        _full_tool_results[request_id].append(
+                            {"type": "tool", "content": msg.content}
+                        )
+
+                    # Now strip _full_result for the LLM
+                    content_len_before = len(msg.content)
+                    msg.content = strip_full_result_from_tool_content(msg.content)
+                    content_len_after = len(msg.content)
+                    if content_len_before != content_len_after:
+                        logger.info(
+                            "Stripped _full_result from tool message",
+                            extra={
+                                "content_len_before": content_len_before,
+                                "content_len_after": content_len_after,
+                                "bytes_saved": content_len_before - content_len_after,
+                            },
+                        )
+
+        logger.debug("tool_node_with_stripping completed")
+        return result
+
+    return tool_node_with_stripping
+
 
 BASE_SYSTEM_PROMPT = """You are a helpful, harmless, and honest AI assistant.
 
@@ -478,8 +581,8 @@ def create_chat_graph(model_name: str, with_tools: bool = True) -> StateGraph[Ag
     graph.add_node("chat", lambda state: chat_node(state, model))
 
     if with_tools and TOOLS:
-        # Add tool node
-        tool_node = ToolNode(TOOLS)
+        # Add tool node with stripping of large results
+        tool_node = create_tool_node(TOOLS)
         graph.add_node("tools", tool_node)
 
         # Set entry point

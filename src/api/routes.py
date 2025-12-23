@@ -2,13 +2,20 @@ import base64
 import json
 import queue
 import threading
+import uuid
 from collections.abc import Generator
 from datetime import datetime
 from typing import Any
 
 from flask import Blueprint, Response, request
 
-from src.agent.chat_agent import ChatAgent, extract_metadata_from_response, generate_title
+from src.agent.chat_agent import (
+    ChatAgent,
+    extract_metadata_from_response,
+    generate_title,
+    get_full_tool_results,
+    set_current_request_id,
+)
 from src.api.utils import (
     build_chat_response,
     build_stream_done_event,
@@ -391,10 +398,21 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
 
     # Create agent and get response
     try:
+        # Generate a unique request ID for capturing full tool results
+        request_id = str(uuid.uuid4())
+        set_current_request_id(request_id)
+
         agent = ChatAgent(model_name=conv.model)
         raw_response, new_state, tool_results, usage_info = agent.chat_with_state(
             message_text, files, previous_state, force_tools=force_tools
         )
+
+        # Get the FULL tool results (with _full_result) captured before stripping
+        # This is needed for extracting generated images, as the tool_results from
+        # chat_with_state have already been stripped
+        full_tool_results = get_full_tool_results(request_id)
+        set_current_request_id(None)  # Clean up
+
         logger.debug(
             "Chat agent completed",
             extra={
@@ -402,6 +420,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
                 "conversation_id": conv_id,
                 "response_length": len(raw_response),
                 "tool_results_count": len(tool_results),
+                "full_tool_results_count": len(full_tool_results),
                 "input_tokens": usage_info.get("input_tokens", 0),
                 "output_tokens": usage_info.get("output_tokens", 0),
                 "usage_info": str(usage_info),
@@ -423,9 +442,9 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             },
         )
 
-        # Extract generated image files from tool results
-        # Note: tool_results are returned separately since they're not persisted in state
-        gen_image_files = extract_generated_images_from_tool_results(tool_results)
+        # Extract generated image files from FULL tool results (before stripping)
+        # We need the full results because they contain the _full_result.image data
+        gen_image_files = extract_generated_images_from_tool_results(full_tool_results)
         if gen_image_files:
             logger.info(
                 "Generated images extracted",
@@ -456,14 +475,14 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         )
         db.save_agent_state(conv_id, new_state)
 
-        # Calculate and save cost
+        # Calculate and save cost (use full_tool_results for image generation cost)
         calculate_and_save_message_cost(
             assistant_msg.id,
             conv_id,
             user.id,
             conv.model,
             usage_info,
-            tool_results,
+            full_tool_results,
             len(clean_response),
             mode="batch",
         )
@@ -592,10 +611,13 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     db.add_message(conv_id, "user", message_text, files=files if files else None)
 
     # Get conversation history for context
+    # NOTE: We exclude files from history to avoid re-sending large base64 data for every message.
+    # Only the current message files are sent to the LLM. Historical images are not needed
+    # since the LLM has seen them before and they're stored in the conversation context.
     messages = db.get_messages(conv_id)
     history = [
-        {"role": m.role, "content": m.content, "files": m.files} for m in messages[:-1]
-    ]  # Exclude the just-added message
+        {"role": m.role, "content": m.content} for m in messages[:-1]
+    ]  # Exclude the just-added message, exclude files from history
     logger.debug(
         "Starting stream chat agent",
         extra={
@@ -606,6 +628,9 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
             "force_tools": force_tools,
         },
     )
+
+    # Generate a unique request ID for capturing full tool results
+    stream_request_id = str(uuid.uuid4())
 
     def generate() -> Generator[str, None, None]:
         """Generator that streams tokens as SSE events with keepalive support.
@@ -618,6 +643,9 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         - str: individual text tokens
         - tuple[str, dict, list]: final (clean_content, metadata, tool_results) after all tokens
         """
+        # Set request ID for this streaming request to capture full tool results
+        set_current_request_id(stream_request_id)
+
         agent = ChatAgent(model_name=conv.model)
         token_queue: queue.Queue[
             str
@@ -628,6 +656,9 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
 
         def stream_tokens() -> None:
             """Background thread that streams tokens into the queue."""
+            # Copy context from parent thread so contextvars are accessible
+            # This is necessary because Python threads don't inherit context by default
+            set_current_request_id(stream_request_id)
             try:
                 logger.debug(
                     "Stream thread started", extra={"user_id": user.id, "conversation_id": conv_id}
@@ -657,6 +688,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                 token_queue.put(e)  # Signal error
 
         # Start streaming in background thread
+        # Note: The thread sets its own request_id via set_current_request_id()
         stream_thread = threading.Thread(target=stream_tokens, daemon=True)
         stream_thread.start()
 
@@ -705,8 +737,13 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                 },
             )
 
-            # Extract generated image files from tool results captured during streaming
-            gen_image_files = extract_generated_images_from_tool_results(tool_results)
+            # Get the FULL tool results (with _full_result) captured before stripping
+            # This is needed for extracting generated images
+            full_tool_results = get_full_tool_results(stream_request_id)
+            set_current_request_id(None)  # Clean up
+
+            # Extract generated image files from FULL tool results (before stripping)
+            gen_image_files = extract_generated_images_from_tool_results(full_tool_results)
             if gen_image_files:
                 logger.info(
                     "Generated images extracted from stream",
@@ -731,14 +768,14 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                 generated_images=generated_images_meta if generated_images_meta else None,
             )
 
-            # Calculate and save cost for streaming
+            # Calculate and save cost for streaming (use full_tool_results for image cost)
             calculate_and_save_message_cost(
                 assistant_msg.id,
                 conv_id,
                 user.id,
                 conv.model,
                 usage_info,
-                tool_results,
+                full_tool_results,
                 len(clean_content),
                 mode="stream",
             )

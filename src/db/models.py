@@ -48,6 +48,7 @@ class Message:
     files: list[dict[str, Any]] = field(default_factory=list)  # File attachments
     sources: list[dict[str, str]] | None = None  # Web sources for assistant messages
     generated_images: list[dict[str, str]] | None = None  # Generated image metadata
+    has_cost: bool = False  # Whether cost tracking data exists for this message
 
 
 @dataclass
