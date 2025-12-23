@@ -167,8 +167,8 @@ When the LLM uses `web_search` or `fetch_url` tools, it cites sources that are d
 ### How it works
 1. **Tool returns JSON**: `web_search` returns `{"query": "...", "results": [{title, url, snippet}, ...]}` instead of plain text
 2. **LLM appends metadata**: System prompt instructs LLM to append `<!-- METADATA:\n{"sources": [...]}\n-->` at the end of responses when web tools are used
-3. **Backend extracts sources**: `extract_metadata_from_response()` in [chat_agent.py](src/agent/chat_agent.py) parses and strips the metadata block
-4. **Streaming filters metadata**: During streaming, the metadata marker is detected and not sent to the frontend
+3. **Backend extracts sources**: `extract_metadata_from_response()` in [chat_agent.py](src/agent/chat_agent.py) parses and strips the metadata block. It handles both HTML comment format (preferred) and plain JSON format (fallback), removing both if the LLM outputs metadata in both formats
+4. **Streaming filters metadata**: During streaming, the HTML comment metadata marker is detected and not sent to the frontend. Any plain JSON metadata that slips through is cleaned in the final buffer check
 5. **Sources stored in DB**: Messages table has a `sources` column (JSON array)
 6. **Sources in API response**: Both batch and streaming responses include `sources` array
 7. **UI shows sources button**: A globe icon appears in message actions when sources exist, opening a popup with clickable links
@@ -188,7 +188,7 @@ When the LLM uses `web_search` or `fetch_url` tools, it cites sources that are d
 -->
 ```
 
-The metadata block is always at the end of the LLM response and is stripped before storing/displaying content.
+The metadata block is always at the end of the LLM response and is stripped before storing/displaying content. Sometimes the LLM outputs plain JSON metadata (without HTML comments) instead of or in addition to the HTML comment format. The extraction function handles both formats, preferring HTML comment format but removing both if present.
 
 ## Image Generation
 
