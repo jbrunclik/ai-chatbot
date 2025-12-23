@@ -25,7 +25,7 @@ ai-chatbot/
 │   │   └── routes.py             # REST endpoints (/api/*, /auth/*)
 │   ├── agent/
 │   │   ├── chat_agent.py         # LangGraph agent with Gemini
-│   │   └── tools.py              # Web tools (fetch_url, web_search)
+│   │   └── tools.py              # Agent tools (fetch_url, web_search, generate_image)
 │   ├── db/
 │   │   └── models.py             # SQLite: User, Conversation, Message, AgentState
 │   └── utils/
@@ -190,6 +190,47 @@ When the LLM uses `web_search` or `fetch_url` tools, it cites sources that are d
 
 The metadata block is always at the end of the LLM response and is stripped before storing/displaying content.
 
+## Image Generation
+
+The app can generate images using Gemini's image generation model (`gemini-3-pro-image-preview`).
+
+### How it works
+1. **Tool available**: `generate_image(prompt, aspect_ratio)` tool in [tools.py](src/agent/tools.py)
+2. **Tool returns JSON**: Returns `{"prompt": "...", "image": {"data": "base64...", "mime_type": "image/png"}}`
+3. **LLM appends metadata**: System prompt instructs LLM to include `"generated_images": [{"prompt": "..."}]` in the metadata block
+4. **Backend extracts images**: `extract_generated_images_from_tool_results()` in [routes.py](src/api/routes.py) parses tool results
+5. **Images stored as files**: Generated images are stored as file attachments on the message
+6. **Metadata stored in DB**: Messages table has a `generated_images` column (JSON array)
+7. **UI shows sparkles button**: A sparkles icon appears in message actions when generated images exist, opening a popup showing the prompt used
+
+### Key files
+- [tools.py](src/agent/tools.py) - `generate_image()` tool using google-genai SDK
+- [chat_agent.py](src/agent/chat_agent.py) - System prompt with metadata instructions, tool result capture during streaming
+- [models.py](src/db/models.py) - `Message.generated_images` field
+- [routes.py](src/api/routes.py) - Image extraction from tool results, API responses
+- [ImageGenPopup.ts](web/src/components/ImageGenPopup.ts) - Popup showing generation info
+- [InfoPopup.ts](web/src/components/InfoPopup.ts) - Generic popup component used by both sources and image gen
+- [Messages.ts](web/src/components/Messages.ts) - Sparkles button rendering
+
+### Metadata format
+The metadata block supports both sources and generated_images:
+```
+<!-- METADATA:
+{"sources": [...], "generated_images": [{"prompt": "..."}]}
+-->
+```
+
+### Aspect ratios
+Supported: `1:1` (default), `16:9`, `9:16`, `4:3`, `3:4`, `3:2`, `2:3`
+
+### Tool result handling
+Tool results (including generated images) are **not persisted** in the agent state. This is intentional:
+1. **Prevents state bloat**: Generated images are large base64 blobs that would grow the state rapidly
+2. **Ensures fresh tool calls**: If tool results were persisted, the LLM might skip calling `generate_image` for follow-up requests, thinking the tool was already called
+3. **Conversation context is sufficient**: The human/AI message history provides enough context for multi-turn conversations
+
+The `chat_with_state()` method returns tool results as a separate third value: `(response_text, new_state, tool_results)`. The batch and streaming endpoints extract images from `tool_results` before discarding them.
+
 ## Voice Input
 
 Voice input uses the Web Speech API (`SpeechRecognition`) in [VoiceInput.ts](web/src/components/VoiceInput.ts):
@@ -246,6 +287,44 @@ When working on mobile/PWA features, beware of these iOS Safari issues:
 - If a thumbnail is missing (e.g., old messages), the full image is fetched from API on-demand when visible
 - Native browser lazy loading (`loading="lazy"`) is used for all images
 - Parallel fetching: Up to 6 missing images fetch concurrently when they come into viewport
+
+### Scroll-to-Bottom Behavior
+
+The app automatically scrolls to the bottom when loading conversations and when new messages are added, but handles lazy-loaded images specially to avoid scrolling before images have loaded and affected the layout.
+
+**How it works:**
+1. **Initial conversation load**: When `renderMessages()` is called, it checks if there are images that need to be loaded from the server
+2. **Skip immediate scroll**: If images need loading and scroll-on-image-load is enabled, the immediate scroll is skipped
+3. **Track image loads**: Each image that starts loading increments a `pendingImageLoads` counter
+4. **Wait for completion**: The code waits for each image's `load` event (not just the fetch) to ensure it has fully rendered
+5. **Debounced smooth scroll**: When all images finish loading (`pendingImageLoads === 0`), a smooth scroll animation is triggered after layout has settled
+6. **Smooth animation**: Uses custom ease-out-cubic easing with duration based on scroll distance (300-600ms)
+
+**New message additions (batch and streaming):**
+When a new message with images is added (via `sendBatchMessage()` or `finalizeStreamingMessage()`):
+- Checks if the message has images that need loading (images without `previewUrl`)
+- Checks if user was already at the bottom (`isScrolledToBottom()`)
+- If both conditions are true: enables `scrollOnImageLoad()` so images are tracked when observed
+- **Batch mode**: Message is added via `addMessageToUI()` (images are created and observed synchronously)
+- **Streaming mode**: Images are added via `renderMessageFiles()` in `finalizeStreamingMessage()` (images are created and observed synchronously)
+- Scrolls to bottom immediately (non-smooth) to ensure images are visible
+- Uses double `requestAnimationFrame` to ensure scroll completed and layout settled
+- Fallback: Checks if images are visible but haven't started loading, and re-observes them to trigger intersection check
+- IntersectionObserver fires for visible images (either immediately or after re-observation)
+- Scroll happens automatically after all images finish loading
+- If no images or user wasn't at bottom: scrolls immediately (if at bottom)
+
+**Smooth scroll implementation:**
+- Custom animation in `scrollToBottom()` with ease-out-cubic easing
+- Used both for button clicks and automatic scrolls after image loading
+- Prevents abrupt flashing when images load and push content down
+
+**Key files:**
+- [thumbnails.ts](web/src/utils/thumbnails.ts) - Image load tracking, `enableScrollOnImageLoad()`, `scheduleScrollAfterImageLoad()`
+- [dom.ts](web/src/utils/dom.ts) - `scrollToBottom()` with smooth animation, `isScrolledToBottom()`
+- [Messages.ts](web/src/components/Messages.ts) - `renderMessages()` skips immediate scroll when images need loading
+- [main.ts](web/src/main.ts) - `sendBatchMessage()` handles scroll logic for new messages with images
+- [ScrollToBottom.ts](web/src/components/ScrollToBottom.ts) - Button component that triggers smooth scroll
 
 ## Version Update Banner
 

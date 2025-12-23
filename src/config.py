@@ -20,6 +20,10 @@ class Config:
     }
     DEFAULT_MODEL = "gemini-3-flash-preview"
 
+    # Image generation model
+    IMAGE_GENERATION_MODEL = "gemini-3-pro-image-preview"
+    MAX_IMAGE_PROMPT_LENGTH: int = int(os.getenv("MAX_IMAGE_PROMPT_LENGTH", "2000"))  # characters
+
     # Google Identity Services (GIS) - only Client ID needed
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
 

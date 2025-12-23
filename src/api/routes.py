@@ -8,40 +8,17 @@ from typing import Any
 from flask import Blueprint, Response, request
 
 from src.agent.chat_agent import ChatAgent, extract_metadata_from_response, generate_title
+from src.api.utils import (
+    build_chat_response,
+    build_stream_done_event,
+    extract_metadata_fields,
+)
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
 from src.db.models import db
-from src.utils.images import process_image_files
-
-
-def validate_files(files: list[dict[str, Any]]) -> tuple[bool, str]:
-    """Validate uploaded files against config limits.
-
-    Returns:
-        Tuple of (is_valid, error_message)
-    """
-    if len(files) > Config.MAX_FILES_PER_MESSAGE:
-        return False, f"Too many files. Maximum is {Config.MAX_FILES_PER_MESSAGE}"
-
-    for file in files:
-        # Check file type
-        file_type = file.get("type", "")
-        if file_type not in Config.ALLOWED_FILE_TYPES:
-            return False, f"File type '{file_type}' is not allowed"
-
-        # Check file size (base64 is ~4/3 larger than binary)
-        data = file.get("data", "")
-        try:
-            decoded_size = len(base64.b64decode(data))
-            if decoded_size > Config.MAX_FILE_SIZE:
-                max_mb = Config.MAX_FILE_SIZE / (1024 * 1024)
-                return False, f"File '{file.get('name', 'unknown')}' exceeds {max_mb:.0f}MB limit"
-        except Exception:
-            return False, "Invalid file data encoding"
-
-    return True, ""
-
+from src.utils.files import validate_files
+from src.utils.images import extract_generated_images_from_tool_results, process_image_files
 
 api = Blueprint("api", __name__, url_prefix="/api")
 auth = Blueprint("auth", __name__, url_prefix="/auth")
@@ -206,6 +183,8 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
         }
         if m.sources:
             msg_data["sources"] = m.sources
+        if m.generated_images:
+            msg_data["generated_images"] = m.generated_images
 
         optimized_messages.append(msg_data)
 
@@ -295,34 +274,52 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     previous_state = db.get_agent_state(conv_id)
 
     # Create agent and get response
-    agent = ChatAgent(model_name=conv.model)
-    raw_response, new_state = agent.chat_with_state(
-        message_text, files, previous_state, force_tools=force_tools
-    )
+    try:
+        agent = ChatAgent(model_name=conv.model)
+        raw_response, new_state, tool_results = agent.chat_with_state(
+            message_text, files, previous_state, force_tools=force_tools
+        )
 
-    # Extract metadata (sources) from response
-    clean_response, metadata = extract_metadata_from_response(raw_response)
-    sources = metadata.get("sources", []) if metadata else []
+        # Extract metadata from response
+        clean_response, metadata = extract_metadata_from_response(raw_response)
+        sources, generated_images_meta = extract_metadata_fields(metadata)
 
-    # Save response and state (with clean content, without metadata block)
-    assistant_msg = db.add_message(
-        conv_id, "assistant", clean_response, sources=sources if sources else None
-    )
-    db.save_agent_state(conv_id, new_state)
+        # Extract generated image files from tool results
+        # Note: tool_results are returned separately since they're not persisted in state
+        gen_image_files = extract_generated_images_from_tool_results(tool_results)
+
+        # Ensure we have at least some content or files to save
+        # If response is empty but we have generated images, use a default message
+        if not clean_response and gen_image_files:
+            clean_response = "I've generated the image for you."
+
+        # Save response and state (with clean content, files, and metadata)
+        assistant_msg = db.add_message(
+            conv_id,
+            "assistant",
+            clean_response,
+            files=gen_image_files if gen_image_files else None,
+            sources=sources if sources else None,
+            generated_images=generated_images_meta if generated_images_meta else None,
+        )
+        db.save_agent_state(conv_id, new_state)
+    except Exception as e:
+        # Log the error and return a proper error response
+        import traceback
+
+        print(f"Error in chat_batch: {e}")
+        print(traceback.format_exc())
+        return {"error": f"Failed to generate response: {str(e)}"}, 500
 
     # Auto-generate title from first message if still default
     if conv.title == "New Conversation":
         new_title = generate_title(message_text, clean_response)
         db.update_conversation(conv_id, user.id, title=new_title)
 
-    response_data: dict[str, Any] = {
-        "id": assistant_msg.id,
-        "role": "assistant",
-        "content": clean_response,
-        "created_at": assistant_msg.created_at.isoformat(),
-    }
-    if sources:
-        response_data["sources"] = sources
+    # Build response
+    response_data = build_chat_response(
+        assistant_msg, clean_response, gen_image_files, sources, generated_images_meta
+    )
 
     return response_data, 200
 
@@ -380,12 +377,12 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
 
         The stream_chat generator yields:
         - str: individual text tokens
-        - tuple[str, list]: final (clean_content, sources) after all tokens
+        - tuple[str, dict, list]: final (clean_content, metadata, tool_results) after all tokens
         """
         agent = ChatAgent(model_name=conv.model)
-        token_queue: queue.Queue[str | tuple[str, list[dict[str, str]]] | None | Exception] = (
-            queue.Queue()
-        )
+        token_queue: queue.Queue[
+            str | tuple[str, dict[str, Any], list[dict[str, Any]]] | None | Exception
+        ] = queue.Queue()
 
         def stream_tokens() -> None:
             """Background thread that streams tokens into the queue."""
@@ -402,9 +399,10 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         stream_thread = threading.Thread(target=stream_tokens, daemon=True)
         stream_thread.start()
 
-        # Variables to capture final content and sources
+        # Variables to capture final content, metadata, and tool results
         clean_content = ""
-        sources: list[dict[str, str]] = []
+        metadata: dict[str, Any] = {}
+        tool_results: list[dict[str, Any]] = []
 
         try:
             while True:
@@ -420,8 +418,8 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                         yield f"data: {json.dumps({'type': 'error', 'message': str(item)})}\n\n"
                         return
                     elif isinstance(item, tuple):
-                        # Final tuple with (clean_content, sources)
-                        clean_content, sources = item
+                        # Final tuple with (clean_content, metadata, tool_results)
+                        clean_content, metadata, tool_results = item
                     else:
                         # Got a token string - yield to frontend
                         yield f"data: {json.dumps({'type': 'token', 'text': item})}\n\n"
@@ -431,9 +429,20 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                     # SSE comments start with ":" and are ignored by clients
                     yield ": keepalive\n\n"
 
-            # Save complete response to DB (with sources)
+            # Extract metadata fields
+            sources, generated_images_meta = extract_metadata_fields(metadata)
+
+            # Extract generated image files from tool results captured during streaming
+            gen_image_files = extract_generated_images_from_tool_results(tool_results)
+
+            # Save complete response to DB
             assistant_msg = db.add_message(
-                conv_id, "assistant", clean_content, sources=sources if sources else None
+                conv_id,
+                "assistant",
+                clean_content,
+                files=gen_image_files if gen_image_files else None,
+                sources=sources if sources else None,
+                generated_images=generated_images_meta if generated_images_meta else None,
             )
 
             # Auto-generate title from first message if still default
@@ -441,14 +450,10 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                 new_title = generate_title(message_text, clean_content)
                 db.update_conversation(conv_id, user.id, title=new_title)
 
-            # Build done event with sources if present
-            done_data: dict[str, Any] = {
-                "type": "done",
-                "id": assistant_msg.id,
-                "created_at": assistant_msg.created_at.isoformat(),
-            }
-            if sources:
-                done_data["sources"] = sources
+            # Build done event
+            done_data = build_stream_done_event(
+                assistant_msg, gen_image_files, sources, generated_images_meta
+            )
 
             yield f"data: {json.dumps(done_data)}\n\n"
 

@@ -186,11 +186,15 @@ export const chat = {
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
+      if (value) {
+        buffer += decoder.decode(value, { stream: !done });
+      }
+
+      // Process all complete lines in the buffer
       const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      // Keep the last incomplete line in the buffer (unless stream is done)
+      buffer = done ? '' : (lines.pop() || '');
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
@@ -202,6 +206,8 @@ export const chat = {
           }
         }
       }
+
+      if (done) break;
     }
   },
 };

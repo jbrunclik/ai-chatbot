@@ -34,12 +34,14 @@ import { initModelSelector, renderModelDropdown } from './components/ModelSelect
 import { initFileUpload, clearPendingFiles, getPendingFiles } from './components/FileUpload';
 import { initLightbox } from './components/Lightbox';
 import { initSourcesPopup } from './components/SourcesPopup';
+import { initImageGenPopup } from './components/ImageGenPopup';
 import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
-import { initScrollToBottom } from './components/ScrollToBottom';
+import { initScrollToBottom, checkScrollButtonVisibility } from './components/ScrollToBottom';
 import { initVersionBanner } from './components/VersionBanner';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
-import { getElementById } from './utils/dom';
-import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, PLUS_ICON } from './utils/icons';
+import { getElementById, isScrolledToBottom, scrollToBottom } from './utils/dom';
+import { enableScrollOnImageLoad, getThumbnailObserver, observeThumbnail } from './utils/thumbnails';
+import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, SPARKLES_ICON, PLUS_ICON } from './utils/icons';
 import { DEFAULT_CONVERSATION_TITLE } from './types/api';
 import type { Conversation, Message } from './types/api';
 
@@ -89,6 +91,9 @@ function renderAppShell(): string {
               <button id="search-btn" class="btn-toolbar" title="Force web search for next message">
                 ${SEARCH_ICON}
               </button>
+              <button id="imagegen-btn" class="btn-toolbar" title="Force image generation for next message">
+                ${SPARKLES_ICON}
+              </button>
             </div>
             <div class="toolbar-right">
               <button id="voice-btn" class="btn-toolbar btn-voice" title="Voice input" aria-pressed="false">
@@ -130,8 +135,15 @@ function renderAppShell(): string {
     </div>
 
     <!-- Sources Popup -->
-    <div id="sources-popup" class="sources-popup hidden">
-      <div class="sources-popup-content">
+    <div id="sources-popup" class="info-popup hidden">
+      <div class="info-popup-content">
+        <!-- Content populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Image Generation Popup -->
+    <div id="imagegen-popup" class="info-popup hidden">
+      <div class="info-popup-content">
         <!-- Content populated dynamically -->
       </div>
     </div>
@@ -162,6 +174,7 @@ async function init(): Promise<void> {
   initVoiceInput();
   initLightbox();
   initSourcesPopup();
+  initImageGenPopup();
   initScrollToBottom();
   initVersionBanner();
   setupEventListeners();
@@ -240,6 +253,10 @@ function switchToConversation(conv: Conversation): void {
   store.setCurrentConversation(conv);
   setActiveConversation(conv.id);
   updateChatTitle(conv.title);
+
+  // Enable scroll-to-bottom for images that load after initial render
+  enableScrollOnImageLoad();
+
   renderMessages(conv.messages || []);
   renderModelDropdown();
   closeSidebar();
@@ -410,6 +427,10 @@ async function sendMessage(): Promise<void> {
       welcomeMessage.remove();
     }
     addMessageToUI(userMessage, messagesContainer);
+    // Update scroll button visibility after adding user message
+    requestAnimationFrame(() => {
+      checkScrollButtonVisibility();
+    });
   }
 
   // Clear input and reset force tools (one-shot)
@@ -450,7 +471,44 @@ async function sendStreamingMessage(
         fullContent += event.text;
         updateStreamingMessage(messageEl, fullContent);
       } else if (event.type === 'done') {
-        finalizeStreamingMessage(messageEl, event.id, event.created_at, event.sources);
+        finalizeStreamingMessage(messageEl, event.id, event.created_at, event.sources, event.generated_images, event.files);
+
+        // Handle scroll-to-bottom for lazy-loaded images (same logic as batch mode)
+        const messagesContainer = getElementById<HTMLDivElement>('messages');
+        if (messagesContainer && event.files) {
+          const hasImagesToLoad = event.files.some(
+            (f) => f.type.startsWith('image/') && !f.previewUrl
+          );
+          const wasAtBottom = isScrolledToBottom(messagesContainer);
+          if (hasImagesToLoad && wasAtBottom) {
+            enableScrollOnImageLoad();
+            scrollToBottom(messagesContainer, false);
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                const images = messageEl.querySelectorAll<HTMLImageElement>(
+                  'img[data-message-id][data-file-index]:not([src])'
+                );
+                images.forEach((img) => {
+                  const rect = img.getBoundingClientRect();
+                  const containerRect = messagesContainer.getBoundingClientRect();
+                  const isVisible = rect.top < containerRect.bottom && rect.bottom > containerRect.top;
+                  if (isVisible && !img.src) {
+                    getThumbnailObserver().unobserve(img);
+                    observeThumbnail(img);
+                  }
+                });
+                checkScrollButtonVisibility();
+              });
+            });
+          } else {
+            if (wasAtBottom) {
+              scrollToBottom(messagesContainer);
+            }
+            requestAnimationFrame(() => {
+              checkScrollButtonVisibility();
+            });
+          }
+        }
 
         // Update conversation title if this was the first message
         await refreshConversationTitle(convId);
@@ -484,12 +542,60 @@ async function sendBatchMessage(
       role: 'assistant',
       content: response.content,
       sources: response.sources,
+      generated_images: response.generated_images,
+      files: response.files,
       created_at: response.created_at,
     };
 
     const messagesContainer = getElementById<HTMLDivElement>('messages');
     if (messagesContainer) {
+      const hasImagesToLoad = assistantMessage.files?.some(
+        (f) => f.type.startsWith('image/') && !f.previewUrl
+      );
+      const wasAtBottom = isScrolledToBottom(messagesContainer);
+      if (hasImagesToLoad && wasAtBottom) {
+        enableScrollOnImageLoad();
+      }
       addMessageToUI(assistantMessage, messagesContainer);
+      if (hasImagesToLoad && wasAtBottom) {
+        // Scroll to bottom immediately to ensure images are visible
+        // IntersectionObserver will re-check after scroll and fire for visible images
+        scrollToBottom(messagesContainer, false);
+        // Use double RAF to ensure scroll completed and layout settled
+        // Then check if images need manual triggering (fallback)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const messageEl = messagesContainer.querySelector(
+              `[data-message-id="${assistantMessage.id}"]`
+            );
+            if (messageEl) {
+              const images = messageEl.querySelectorAll<HTMLImageElement>(
+                'img[data-message-id][data-file-index]:not([src])'
+              );
+              // If images are visible but haven't started loading, manually trigger
+              // This is a fallback in case IntersectionObserver didn't fire
+              images.forEach((img) => {
+                const rect = img.getBoundingClientRect();
+                const containerRect = messagesContainer.getBoundingClientRect();
+                const isVisible = rect.top < containerRect.bottom && rect.bottom > containerRect.top;
+                if (isVisible && !img.src) {
+                  // Image is visible but not loading - unobserve and re-observe to trigger check
+                  getThumbnailObserver().unobserve(img);
+                  observeThumbnail(img);
+                }
+              });
+            }
+            checkScrollButtonVisibility();
+          });
+        });
+      } else {
+        if (wasAtBottom) {
+          scrollToBottom(messagesContainer);
+        }
+        requestAnimationFrame(() => {
+          checkScrollButtonVisibility();
+        });
+      }
     }
 
     // Update conversation title if this was the first message
@@ -500,11 +606,12 @@ async function sendBatchMessage(
   }
 }
 
-// Initialize toolbar buttons (stream toggle, search toggle)
+// Initialize toolbar buttons (stream toggle, search toggle, imagegen toggle)
 function initToolbarButtons(): void {
   const store = useStore.getState();
   const streamBtn = getElementById<HTMLButtonElement>('stream-btn');
   const searchBtn = getElementById<HTMLButtonElement>('search-btn');
+  const imagegenBtn = getElementById<HTMLButtonElement>('imagegen-btn');
 
   // Initialize stream button state from store
   if (streamBtn) {
@@ -526,6 +633,16 @@ function initToolbarButtons(): void {
       updateSearchButtonState(searchBtn, isActive);
     });
   }
+
+  // Initialize image generation button (one-shot toggle for generate_image tool)
+  if (imagegenBtn) {
+    updateImagegenButtonState(imagegenBtn, store.forceTools.includes('generate_image'));
+    imagegenBtn.addEventListener('click', () => {
+      useStore.getState().toggleForceTool('generate_image');
+      const isActive = useStore.getState().forceTools.includes('generate_image');
+      updateImagegenButtonState(imagegenBtn, isActive);
+    });
+  }
 }
 
 // Update stream button visual state
@@ -542,12 +659,22 @@ function updateSearchButtonState(btn: HTMLButtonElement, active: boolean): void 
   btn.title = active ? 'Web search will be used for next message' : 'Force web search for next message';
 }
 
+// Update image generation button visual state
+function updateImagegenButtonState(btn: HTMLButtonElement, active: boolean): void {
+  btn.classList.toggle('active', active);
+  btn.title = active ? 'Image generation will be used for next message' : 'Force image generation for next message';
+}
+
 // Reset force tools and update UI after message is sent
 function resetForceTools(): void {
   const searchBtn = getElementById<HTMLButtonElement>('search-btn');
+  const imagegenBtn = getElementById<HTMLButtonElement>('imagegen-btn');
   useStore.getState().clearForceTools();
   if (searchBtn) {
     updateSearchButtonState(searchBtn, false);
+  }
+  if (imagegenBtn) {
+    updateImagegenButtonState(imagegenBtn, false);
   }
 }
 

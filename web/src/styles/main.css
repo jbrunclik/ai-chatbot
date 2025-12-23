@@ -1177,6 +1177,27 @@ body {
     margin-bottom: 24px;
 }
 
+/* Message loading indicator (for batch mode) */
+.message-loading {
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    gap: 16px;
+}
+
+/* Loading indicator uses the same assistant avatar style */
+.message-loading .message-avatar {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+}
+
+/* Loading dots wrapper - align with message content text position */
+.message-loading .loading-dots {
+    /* Avatar margin-top (8px) + content padding (12px) - dots padding (4px) = 16px */
+    margin-top: 16px;
+}
+
 /* Loading dots indicator */
 .loading-dots {
     display: flex;
@@ -1788,8 +1809,8 @@ body {
     height: 16px;
 }
 
-/* Sources Popup */
-.sources-popup {
+/* Info Popup (generic popup component for sources, image gen, etc.) */
+.info-popup {
     position: fixed;
     inset: 0;
     background-color: rgba(0, 0, 0, 0.8);
@@ -1802,11 +1823,11 @@ body {
     -webkit-backdrop-filter: blur(4px);
 }
 
-.sources-popup.hidden {
+.info-popup.hidden {
     display: none;
 }
 
-.sources-popup-content {
+.info-popup-content {
     background-color: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1819,7 +1840,7 @@ body {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
-.sources-popup-header {
+.info-popup-header {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -1828,19 +1849,19 @@ body {
     background-color: var(--bg-tertiary);
 }
 
-.sources-popup-icon {
+.info-popup-icon {
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--accent);
 }
 
-.sources-popup-icon svg {
+.info-popup-icon svg {
     width: 20px;
     height: 20px;
 }
 
-.sources-popup-header h3 {
+.info-popup-header h3 {
     flex: 1;
     margin: 0;
     font-size: 1rem;
@@ -1849,6 +1870,54 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+.info-popup-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+}
+
+.info-popup-close:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+}
+
+.info-popup-close svg {
+    width: 18px;
+    height: 18px;
+}
+
+.info-popup-body {
+    padding: 8px;
+    overflow-y: auto;
+}
+
+/* Mobile adjustments for info popup */
+@media (max-width: 768px) {
+    .info-popup {
+        padding: 8px;
+        align-items: flex-end;
+    }
+
+    .info-popup-content {
+        max-height: 70vh;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        margin-bottom: env(safe-area-inset-bottom, 0);
+    }
+}
+
+/* Sources Popup Content */
+.sources-header-badge {
+    display: none;
 }
 
 .sources-count {
@@ -1865,32 +1934,11 @@ body {
     font-weight: 600;
 }
 
-.sources-popup-close {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    transition: all 0.15s;
-}
-
-.sources-popup-close:hover {
-    color: var(--text-primary);
-    background-color: var(--bg-secondary);
-}
-
-.sources-popup-close svg {
-    width: 18px;
-    height: 18px;
+.sources-body {
+    padding: 0;
 }
 
 .sources-list {
-    padding: 8px;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1943,20 +1991,7 @@ body {
     margin-top: 3px;
 }
 
-/* Mobile adjustments for sources popup */
 @media (max-width: 768px) {
-    .sources-popup {
-        padding: 8px;
-        align-items: flex-end;
-    }
-
-    .sources-popup-content {
-        max-height: 70vh;
-        border-bottom-left-radius: 0;
-        border-bottom-right-radius: 0;
-        margin-bottom: env(safe-area-inset-bottom, 0);
-    }
-
     .source-item {
         flex-wrap: wrap;
     }
@@ -1966,4 +2001,103 @@ body {
         margin-left: 36px;
         margin-top: 4px;
     }
+}
+
+/* Image Generation Popup Content */
+.imagegen-header-badge {
+    display: none;
+}
+
+.imagegen-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 20px;
+    padding: 0 8px;
+    background-color: var(--accent);
+    color: white;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.imagegen-body {
+    padding: 0;
+}
+
+.imagegen-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.imagegen-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    background-color: var(--bg-tertiary);
+}
+
+.imagegen-number {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--accent);
+    color: white;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+.imagegen-details {
+    flex: 1;
+    min-width: 0;
+}
+
+.imagegen-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.imagegen-prompt {
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+/* Image generation button in message actions */
+.message-imagegen-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+}
+
+.message-imagegen-btn:hover {
+    color: var(--accent);
+    background-color: var(--bg-tertiary);
+}
+
+.message-imagegen-btn svg {
+    width: 16px;
+    height: 16px;
 }

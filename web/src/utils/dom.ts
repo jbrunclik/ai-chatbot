@@ -90,10 +90,39 @@ export function autoResizeTextarea(textarea: HTMLTextAreaElement): void {
  * Scroll element to bottom
  */
 export function scrollToBottom(element: HTMLElement, smooth = false): void {
-  element.scrollTo({
-    top: element.scrollHeight,
-    behavior: smooth ? 'smooth' : 'auto',
-  });
+  if (!smooth) {
+    element.scrollTo({
+      top: element.scrollHeight,
+      behavior: 'auto',
+    });
+    return;
+  }
+
+  // Custom smooth scroll with easing for better animation
+  const start = element.scrollTop;
+  const target = element.scrollHeight - element.clientHeight;
+  const distance = target - start;
+  const duration = Math.min(600, Math.max(300, Math.abs(distance) * 0.5)); // 300-600ms based on distance
+  const startTime = performance.now();
+
+  // Easing function: ease-out-cubic
+  const easeOutCubic = (t: number): number => {
+    return 1 - Math.pow(1 - t, 3);
+  };
+
+  const animate = (currentTime: number): void => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    const eased = easeOutCubic(progress);
+
+    element.scrollTop = start + distance * eased;
+
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    }
+  };
+
+  requestAnimationFrame(animate);
 }
 
 /**

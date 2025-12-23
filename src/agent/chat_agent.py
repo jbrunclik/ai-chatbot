@@ -83,11 +83,37 @@ BASE_SYSTEM_PROMPT = """You are a helpful, harmless, and honest AI assistant.
 
 TOOLS_SYSTEM_PROMPT = """
 # Tools Available
-You have access to web tools for real-time information:
+You have access to the following tools:
+
+## Web Tools
 - **web_search**: Search the web for current information, news, prices, events, etc. Returns JSON with results.
 - **fetch_url**: Fetch and read the content of a specific web page.
 
-# When to Use Tools
+## Image Generation
+- **generate_image**: Generate images from text descriptions. Returns JSON with the image data.
+
+# CRITICAL: How to Use Tools Correctly
+You have function calling capabilities. To use a tool:
+1. Call the tool function directly (NOT by writing JSON in your text response)
+2. The tool will execute and return results
+3. Then write your natural language response to the user
+
+WRONG (do NOT do this):
+```
+{"action": "generate_image", "action_input": {"prompt": "..."}}
+```
+
+RIGHT: Call the tool function directly, then write a response like:
+"Here's the image I created for you..."
+
+IMPORTANT RULES:
+- NEVER write tool calls as JSON text in your response
+- You MUST ALWAYS include a natural language response that the user can see
+- After ANY tool call completes, you MUST write text to explain what happened
+- If generating an image, ALWAYS respond with text like "Here's the image I created for you..." or "I've generated..."
+- NEVER leave the response empty after using a tool - the user needs to see what you did
+
+# When to Use Web Tools
 ALWAYS use web_search first when the user asks about:
 - Current events, news, "what happened today/recently"
 - Real-time data: stock prices, crypto, weather, sports scores
@@ -98,24 +124,60 @@ ALWAYS use web_search first when the user asks about:
 After searching, use fetch_url to read specific pages for more details if needed.
 Do NOT rely on training data for time-sensitive information.
 
+# When to Use Image Generation
+Use generate_image when the user:
+- Asks you to create, generate, draw, make, or produce an image
+- Wants a visualization, illustration, or artwork
+- Requests modifications to a previously generated image (describe the full desired result)
+
+For image prompts, be specific and detailed:
+- Include style (photorealistic, cartoon, watercolor, oil painting, etc.)
+- Describe colors, lighting, composition, mood, and atmosphere
+- If text should appear in the image, specify it clearly
+- For modifications, describe the complete desired result, not just the changes
+
 # Knowledge Cutoff
 Your training data has a cutoff date. For anything after that, use web_search.
 
 # Response Metadata
-When you use web tools (web_search or fetch_url), you MUST append metadata at the very end of your response.
-Use this exact format with the special markers:
+When you use ANY tools, you MUST append a SINGLE metadata block at the very end of your response.
+IMPORTANT: There must be only ONE metadata block per response, even if you use multiple different tools.
 
+Use this exact format with the special markers:
 <!-- METADATA:
-{"sources": [{"title": "Source Title", "url": "https://example.com"}]}
+{"sources": [...], "generated_images": [...]}
 -->
 
-Rules:
+## Rules for Sources (web_search, fetch_url)
 - Include ALL sources you referenced: both from web_search results AND any URLs you fetched with fetch_url
 - Only include sources you actually used information from in your response
-- Do NOT include this section if you didn't use any web tools
-- The JSON must be valid - use double quotes, escape special characters
 - Each source needs "title" and "url" fields
-- For fetch_url sources, use the page title (or URL domain if unknown) as the title"""
+- For fetch_url sources, use the page title (or URL domain if unknown) as the title
+
+## Rules for Generated Images (generate_image)
+- Include the exact prompt you used to generate the image
+- Each generated_images entry needs: {"prompt": "the exact prompt you used"}
+
+## General Metadata Rules
+- Do NOT include this section if you didn't use any tools
+- The JSON must be valid - use double quotes, escape special characters
+- If you used BOTH web tools AND generate_image, include BOTH "sources" and "generated_images" arrays in the SAME metadata block
+- Do NOT create separate metadata blocks for different tools - combine everything into ONE block
+
+Example with both sources and generated images:
+<!-- METADATA:
+{"sources": [{"title": "Wikipedia", "url": "https://en.wikipedia.org/..."}], "generated_images": [{"prompt": "a majestic mountain sunset, photorealistic, golden hour lighting"}]}
+-->
+
+Example with only sources:
+<!-- METADATA:
+{"sources": [{"title": "Wikipedia", "url": "https://en.wikipedia.org/..."}]}
+-->
+
+Example with only generated images:
+<!-- METADATA:
+{"generated_images": [{"prompt": "a majestic mountain sunset, photorealistic, golden hour lighting"}]}
+-->"""
 
 
 def get_force_tools_prompt(force_tools: list[str]) -> str:
@@ -195,6 +257,32 @@ METADATA_PATTERN = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# Pattern to match Gemini's tool call JSON format that sometimes leaks into response text
+# This happens when the model outputs the tool call description as text alongside the actual tool call
+# Format: {"action": "tool_name", "action_input": "..."} or {"action": "tool_name", "action_input": {...}}
+# Note: Properly handles escaped quotes in string values. For object values, matches balanced braces
+# up to 2 levels deep (sufficient for typical tool call artifacts like {"prompt": "..."}).
+# The pattern is specific enough (requires "action" and "action_input" keys) to avoid false matches.
+TOOL_CALL_JSON_PATTERN = re.compile(
+    r'\n*\{\s*"action":\s*"(?:[^"\\]|\\.)+"\s*,\s*"action_input":\s*(?:"(?:[^"\\]|\\.)*"|\{(?:[^{}]|\{[^}]*\})*\})\s*\}',
+    re.DOTALL,
+)
+
+
+def clean_tool_call_json(response: str) -> str:
+    """Remove tool call JSON artifacts that sometimes leak into LLM response text.
+
+    Gemini may output tool call descriptions as text alongside actual function calls.
+    This removes those JSON blocks to keep only natural language content.
+
+    Args:
+        response: The LLM response text
+
+    Returns:
+        Response with tool call JSON removed
+    """
+    return TOOL_CALL_JSON_PATTERN.sub("", response).strip()
+
 
 def extract_metadata_from_response(response: str) -> tuple[str, dict[str, Any]]:
     """Extract metadata from LLM response and return clean content.
@@ -204,14 +292,19 @@ def extract_metadata_from_response(response: str) -> tuple[str, dict[str, Any]]:
     {"sources": [...]}
     -->
 
+    Also removes any tool call JSON artifacts that leaked into the response.
+
     Args:
         response: The raw LLM response text
 
     Returns:
         Tuple of (clean_content, metadata_dict)
-        - clean_content: Response with metadata block removed
+        - clean_content: Response with metadata block and tool call JSON removed
         - metadata_dict: Parsed metadata (empty dict if none found or parse error)
     """
+    # First, clean up any tool call JSON that leaked into the response
+    response = clean_tool_call_json(response)
+
     match = METADATA_PATTERN.search(response)
     if not match:
         return response, {}
@@ -441,7 +534,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
-    ) -> Generator[str | tuple[str, list[dict[str, str]]], None, None]:
+    ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]]], None, None]:
         """
         Stream response tokens using LangGraph's stream method.
 
@@ -452,8 +545,11 @@ class ChatAgent:
             force_tools: Optional list of tool names that must be used
 
         Yields:
-            Text tokens as they are generated.
-            The final yield is a tuple of (full_content, sources) after metadata extraction.
+            - str: Text tokens for streaming display
+            - tuple: Final (content, metadata, tool_results) where:
+              - content: Clean response text (metadata stripped)
+              - metadata: Extracted metadata dict (sources, generated_images, etc.)
+              - tool_results: List of tool message dicts for server-side processing
         """
         messages = self._build_messages(text, files, history, force_tools=force_tools)
 
@@ -464,6 +560,8 @@ class ChatAgent:
         buffer = ""
         metadata_marker = "<!-- METADATA:"
         in_metadata = False
+        # Capture tool results for server-side extraction (e.g., generated images)
+        tool_results: list[dict[str, Any]] = []
 
         # Stream the graph execution with messages mode for token-level streaming
         for event in self.graph.stream(
@@ -473,6 +571,17 @@ class ChatAgent:
             # event is a tuple of (message_chunk, metadata) in messages mode
             if isinstance(event, tuple) and len(event) >= 1:
                 message_chunk = event[0]
+
+                # Capture tool messages (results from tool execution)
+                if isinstance(message_chunk, ToolMessage):
+                    tool_results.append(
+                        {
+                            "type": "tool",
+                            "content": message_chunk.content,
+                        }
+                    )
+                    continue
+
                 # Only yield content from AI message chunks (not tool calls or tool results)
                 if isinstance(message_chunk, AIMessageChunk):
                     # Skip chunks that are only tool calls (no text content)
@@ -512,12 +621,11 @@ class ChatAgent:
                 if clean:
                     yield clean
 
-        # Extract metadata and yield final result with sources
+        # Extract metadata and yield final tuple
         clean_content, metadata = extract_metadata_from_response(full_response)
-        sources = metadata.get("sources", [])
 
-        # Yield final tuple with clean content and sources
-        yield (clean_content, sources)
+        # Final yield: (content, metadata, tool_results) for server processing
+        yield (clean_content, metadata, tool_results)
 
     def chat_with_state(
         self,
@@ -525,7 +633,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         previous_state: dict[str, Any] | None = None,
         force_tools: list[str] | None = None,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
         """
         Chat with persistent state for multi-turn agent workflows.
 
@@ -536,7 +644,8 @@ class ChatAgent:
             force_tools: Optional list of tool names that must be used
 
         Returns:
-            Tuple of (response text, new state for persistence)
+            Tuple of (response text, new state for persistence, tool results)
+            Tool results are returned separately since they're not persisted in state.
         """
         # Restore previous messages or start fresh
         messages: list[BaseMessage] = []
@@ -552,13 +661,8 @@ class ChatAgent:
                     messages.append(HumanMessage(content=msg_data["content"]))
                 elif msg_data["type"] == "ai":
                     messages.append(AIMessage(content=msg_data["content"]))
-                elif msg_data["type"] == "tool":
-                    messages.append(
-                        ToolMessage(
-                            content=msg_data["content"],
-                            tool_call_id=msg_data.get("tool_call_id", ""),
-                        )
-                    )
+                # Skip tool messages - they are no longer persisted and shouldn't
+                # be restored (prevents issues with large binary data and tool reuse)
 
         # Add the current user message (with multimodal support)
         content = self._build_message_content(text, files)
@@ -568,15 +672,41 @@ class ChatAgent:
         result = self.graph.invoke(cast(Any, {"messages": messages}))
 
         # Extract response (last AI message with actual content)
+        # We need to find the final AI response that has text content.
+        # This might be after tool calls, so we iterate in reverse and take the
+        # first AIMessage that has extractable text content (even if it also has tool_calls).
         response_text = ""
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage):
-                if msg.tool_calls and not extract_text_content(msg.content):
+                # Extract text content first to see if there's any text
+                text = extract_text_content(msg.content)
+                # Skip if this message only has tool calls and no text content
+                if msg.tool_calls and not text:
                     continue
-                response_text = extract_text_content(msg.content)
-                break
+                # Clean any tool call JSON that leaked into response
+                text = clean_tool_call_json(text)
+                if text:
+                    response_text = text
+                    break
 
-        # Serialize state for persistence (includes tool messages for multi-turn tool workflows)
+        # Extract tool results from the raw result (before state serialization)
+        # These are returned separately for server-side processing (e.g., extracting images)
+        tool_results: list[dict[str, Any]] = []
+        for msg in result["messages"]:
+            if isinstance(msg, ToolMessage):
+                tool_results.append(
+                    {
+                        "type": "tool",
+                        "content": msg.content,
+                    }
+                )
+
+        # Serialize state for persistence
+        # NOTE: We exclude ToolMessages from persisted state because:
+        # 1. Tool results (especially generate_image) can contain large binary data
+        # 2. Preserving tool results may cause the LLM to skip calling tools again
+        # 3. For multi-turn conversations, the LLM has the conversation context from
+        #    human/ai messages which is sufficient for continuity
         new_state: dict[str, Any] = {"messages": []}
         for m in result["messages"]:
             if isinstance(m, HumanMessage):
@@ -585,18 +715,13 @@ class ChatAgent:
                 )
             elif isinstance(m, AIMessage):
                 content = extract_text_content(m.content)
-                if content:  # Only store if there's actual content
+                # Clean any tool call JSON that leaked into the response
+                content = clean_tool_call_json(content)
+                if content:  # Only store if there's actual content after cleaning
                     new_state["messages"].append({"type": "ai", "content": content})
-            elif isinstance(m, ToolMessage):
-                new_state["messages"].append(
-                    {
-                        "type": "tool",
-                        "content": m.content,
-                        "tool_call_id": m.tool_call_id,
-                    }
-                )
+            # Skip ToolMessages - they contain execution details that shouldn't persist
 
-        return response_text, new_state
+        return response_text, new_state, tool_results
 
 
 def generate_title(user_message: str, assistant_response: str) -> str:

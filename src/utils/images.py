@@ -2,6 +2,7 @@
 
 import base64
 import io
+import json
 from typing import Any
 
 from PIL import Image
@@ -9,6 +10,14 @@ from PIL import Image
 # Thumbnail dimensions
 THUMBNAIL_MAX_SIZE = (400, 400)
 THUMBNAIL_QUALITY = 85
+
+# MIME type to file extension mapping
+MIME_TYPE_TO_EXT: dict[str, str] = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+}
 
 
 def generate_thumbnail(
@@ -84,5 +93,84 @@ def process_image_files(files: list[dict[str, Any]]) -> list[dict[str, Any]]:
             thumbnail = generate_thumbnail(file.get("data", ""), file.get("type", ""))
             if thumbnail:
                 file["thumbnail"] = thumbnail
+
+    return files
+
+
+def extract_generated_images_from_tool_results(
+    tool_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Extract generated images from tool results.
+
+    Scans tool results for generate_image outputs and extracts the image data
+    to be stored as files.
+
+    Args:
+        tool_results: List of tool result dicts with 'type' and 'content' keys
+
+    Returns:
+        List of file dicts with {name, type, data, thumbnail} to store
+    """
+    files: list[dict[str, Any]] = []
+
+    for msg in tool_results:
+        # Validate message structure
+        if not isinstance(msg, dict) or msg.get("type") != "tool":
+            continue
+
+        content = msg.get("content", "")
+        if not content or not isinstance(content, str):
+            continue
+
+        # Try to parse as JSON from generate_image tool
+        try:
+            tool_result = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            # Not valid JSON, skip (might be from a different tool)
+            continue
+
+        # Validate tool result structure
+        if not isinstance(tool_result, dict):
+            continue
+
+        # Check if this is a generate_image result with required fields
+        if "image" not in tool_result or "prompt" not in tool_result:
+            continue
+
+        # Validate image data structure
+        image_data = tool_result["image"]
+        if not isinstance(image_data, dict):
+            continue
+
+        # Validate required image fields
+        if "data" not in image_data:
+            continue
+
+        image_data_str = image_data["data"]
+        if not isinstance(image_data_str, str) or not image_data_str:
+            continue
+
+        # Extract image file
+        mime_type = image_data.get("mime_type", "image/png")
+        if not isinstance(mime_type, str) or not mime_type.startswith("image/"):
+            # Invalid mime type, default to PNG
+            mime_type = "image/png"
+
+        # Determine file extension from mime type
+        ext = MIME_TYPE_TO_EXT.get(mime_type, "png")
+
+        file_index = len(files)
+        file_entry = {
+            "name": f"generated_image_{file_index + 1}.{ext}",
+            "type": mime_type,
+            "data": image_data_str,
+        }
+
+        # Generate thumbnail for the image
+        processed = process_image_files([file_entry])
+        if processed:
+            file_entry = processed[0]
+
+        files.append(file_entry)
 
     return files
