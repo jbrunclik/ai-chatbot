@@ -373,6 +373,98 @@ Add SVG constants to [icons.ts](web/src/utils/icons.ts) and import where needed.
 - [TODO.md](TODO.md) - Memory bank for planned work
 - [README.md](README.md) - User-facing documentation
 
+## Structured Logging
+
+The application uses structured JSON logging for easy integration with Loki or other log aggregation systems. All logs include request IDs for correlation.
+
+### Configuration
+
+- **LOG_LEVEL**: Environment variable controlling log verbosity (default: `INFO`)
+  - Valid levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+  - Set via `.env` file: `LOG_LEVEL=DEBUG`
+
+### Log Format
+
+All logs are JSON-formatted with the following structure:
+```json
+{
+  "timestamp": "2024-01-01 12:00:00",
+  "level": "INFO",
+  "logger": "src.api.routes",
+  "message": "Batch chat request",
+  "request_id": "abc-123-def",
+  "user_id": "user-123",
+  "conversation_id": "conv-456"
+}
+```
+
+### Request IDs
+
+Every request automatically gets a unique request ID:
+- Generated as UUID if not provided in `X-Request-ID` header
+- Included in all log entries for that request
+- Enables correlation of logs across the request lifecycle
+
+### Logging Guidelines
+
+**When adding new code, always add appropriate logging:**
+
+1. **INFO level**: Important operations that happen per-request
+   - Request start/completion
+   - Successful authentication
+   - Conversation creation/deletion
+   - Chat completions
+
+2. **DEBUG level**: Detailed information for troubleshooting
+   - Function entry/exit
+   - Intermediate state values
+   - Payload snippets (use `log_payload_snippet()` helper)
+   - Database operations
+
+3. **WARNING level**: Unusual but recoverable situations
+   - Validation failures
+   - Missing optional data
+   - Retryable errors
+
+4. **ERROR level**: Failures that need attention
+   - Exceptions (always use `exc_info=True`)
+   - Failed operations
+   - System errors
+
+**Best Practices:**
+- Use structured logging with `extra` dict for context
+- Include relevant IDs (user_id, conversation_id, message_id) in logs
+- Log payload snippets for debugging (but truncate large data)
+- Always log exceptions with `exc_info=True`
+- Use appropriate log levels - don't spam INFO with debug details
+
+**Example:**
+```python
+from src.utils.logging import get_logger, log_payload_snippet
+
+logger = get_logger(__name__)
+
+def my_function(user_id: str, data: dict) -> None:
+    logger.debug("Function called", extra={"user_id": user_id})
+    log_payload_snippet(logger, data)
+
+    try:
+        # ... do work ...
+        logger.info("Operation completed", extra={"user_id": user_id, "result": result})
+    except Exception as e:
+        logger.error("Operation failed", extra={"user_id": user_id, "error": str(e)}, exc_info=True)
+        raise
+```
+
+### Key Logging Points
+
+- **Routes**: All endpoints log request/response with status codes
+- **Agent**: LLM invocations, tool calls, response extraction
+- **Tools**: Tool execution start/completion, errors
+- **Database**: CRUD operations, state saves
+- **Auth**: Token validation, user lookups
+- **File processing**: Validation, thumbnail generation
+
 ## Documentation Maintenance
 
 When making significant changes to the codebase:
@@ -381,6 +473,8 @@ When making significant changes to the codebase:
 3. Update [TODO.md](TODO.md) to mark completed items or add new planned work
 
 **Important**: When implementing a new feature, always update documentation as part of the commit - don't wait to be asked. For significant features, add a dedicated section to CLAUDE.md explaining how it works, key files, and any testing/debugging tips.
+
+**When adding new code, always add appropriate logging** - see the Structured Logging section above for guidelines.
 
 ---
 

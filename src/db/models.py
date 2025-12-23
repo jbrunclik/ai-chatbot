@@ -11,6 +11,9 @@ from typing import Any
 from yoyo import get_backend, read_migrations
 
 from src.config import Config
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Path to migrations directory
 MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
@@ -70,17 +73,25 @@ class Database:
 
     def _init_db(self) -> None:
         """Run yoyo migrations to initialize/update the database schema."""
+        logger.debug("Initializing database", extra={"db_path": str(self.db_path)})
         backend = get_backend(f"sqlite:///{self.db_path}")
         migrations = read_migrations(str(MIGRATIONS_DIR))
         with backend.lock():
-            backend.apply_migrations(backend.to_apply(migrations))
+            migrations_to_apply = backend.to_apply(migrations)
+            if migrations_to_apply:
+                logger.info(
+                    "Applying database migrations", extra={"count": len(migrations_to_apply)}
+                )
+            backend.apply_migrations(migrations_to_apply)
 
     # User operations
     def get_or_create_user(self, email: str, name: str, picture: str | None = None) -> User:
+        logger.debug("Getting or creating user", extra={"email": email})
         with self._get_conn() as conn:
             row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
 
             if row:
+                logger.debug("User found", extra={"user_id": row["id"], "email": email})
                 return User(
                     id=row["id"],
                     email=row["email"],
@@ -96,6 +107,7 @@ class Database:
                 (user_id, email, name, picture, now.isoformat()),
             )
             conn.commit()
+            logger.info("User created", extra={"user_id": user_id, "email": email})
 
             return User(
                 id=user_id,
@@ -127,6 +139,10 @@ class Database:
         conv_id = str(uuid.uuid4())
         model = model or Config.DEFAULT_MODEL
         now = datetime.now()
+        logger.debug(
+            "Creating conversation",
+            extra={"user_id": user_id, "conversation_id": conv_id, "model": model},
+        )
 
         with self._get_conn() as conn:
             conn.execute(
@@ -136,6 +152,7 @@ class Database:
             )
             conn.commit()
 
+        logger.info("Conversation created", extra={"conversation_id": conv_id, "user_id": user_id})
         return Conversation(
             id=conv_id,
             user_id=user_id,
@@ -250,6 +267,18 @@ class Database:
         files_json = json.dumps(files) if files else None
         sources_json = json.dumps(sources) if sources else None
         generated_images_json = json.dumps(generated_images) if generated_images else None
+        logger.debug(
+            "Adding message",
+            extra={
+                "conversation_id": conversation_id,
+                "message_id": msg_id,
+                "role": role,
+                "content_length": len(content),
+                "file_count": len(files),
+                "has_sources": bool(sources),
+                "has_generated_images": bool(generated_images),
+            },
+        )
 
         with self._get_conn() as conn:
             conn.execute(
@@ -273,6 +302,9 @@ class Database:
             )
             conn.commit()
 
+        logger.debug(
+            "Message added", extra={"message_id": msg_id, "conversation_id": conversation_id}
+        )
         return Message(
             id=msg_id,
             conversation_id=conversation_id,
@@ -334,7 +366,12 @@ class Database:
     # Agent state operations
     def save_agent_state(self, conversation_id: str, state: dict[str, Any]) -> None:
         state_json = json.dumps(state)
+        state_size = len(state_json)
         now = datetime.now().isoformat()
+        logger.debug(
+            "Saving agent state",
+            extra={"conversation_id": conversation_id, "state_size": state_size},
+        )
 
         with self._get_conn() as conn:
             conn.execute(
@@ -346,6 +383,7 @@ class Database:
                 (conversation_id, state_json, now),
             )
             conn.commit()
+        logger.debug("Agent state saved", extra={"conversation_id": conversation_id})
 
     def get_agent_state(self, conversation_id: str) -> dict[str, Any] | None:
         with self._get_conn() as conn:

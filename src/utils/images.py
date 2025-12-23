@@ -7,6 +7,10 @@ from typing import Any
 
 from PIL import Image
 
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 # Thumbnail dimensions
 THUMBNAIL_MAX_SIZE = (400, 400)
 THUMBNAIL_QUALITY = 85
@@ -75,7 +79,11 @@ def generate_thumbnail(
         return base64.b64encode(output.read()).decode("utf-8")
 
     except Exception as e:
-        print(f"Error generating thumbnail: {e}")
+        logger.error(
+            "Error generating thumbnail",
+            extra={"mime_type": mime_type, "error": str(e)},
+            exc_info=True,
+        )
         return None
 
 
@@ -88,11 +96,21 @@ def process_image_files(files: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Returns:
         Same list with 'thumbnail' key added to image files
     """
+    image_count = sum(1 for f in files if f.get("type", "").startswith("image/"))
+    if image_count > 0:
+        logger.debug(
+            "Processing image files for thumbnails",
+            extra={"image_count": image_count, "total_files": len(files)},
+        )
     for file in files:
         if file.get("type", "").startswith("image/"):
             thumbnail = generate_thumbnail(file.get("data", ""), file.get("type", ""))
             if thumbnail:
                 file["thumbnail"] = thumbnail
+                logger.debug(
+                    "Thumbnail generated",
+                    extra={"file_name": file.get("name", "unknown"), "file_type": file.get("type")},
+                )
 
     return files
 

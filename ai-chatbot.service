@@ -15,7 +15,7 @@ WorkingDirectory=%h/src/ai-chatbot
 # Build frontend before starting (npm install + build)
 ExecStartPre=/bin/bash -c 'cd %h/src/ai-chatbot/web && npm install && npm run build'
 
-ExecStart=/bin/bash -c 'cd %h/src/ai-chatbot && .venv/bin/gunicorn --bind 0.0.0.0:${PORT} --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-600} "src.app:create_app()"'
+ExecStart=/bin/bash -c 'cd %h/src/ai-chatbot && .venv/bin/gunicorn --bind 0.0.0.0:${PORT} --workers ${GUNICORN_WORKERS:-2} --timeout ${GUNICORN_TIMEOUT:-600} --access-logfile - --error-logfile - --log-level info --capture-output "src.app:create_app()"'
 Restart=on-failure
 RestartSec=5
 Environment=PATH=%h/src/ai-chatbot/.venv/bin:/usr/local/bin:/usr/bin:/bin
@@ -26,6 +26,20 @@ EnvironmentFile=%h/src/ai-chatbot/.env
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
+
+# Log rotation and limits
+# Limit log rate to prevent disk space issues (especially with DEBUG logging)
+# LogRateLimitIntervalSec: Time window for rate limiting (default: 30s)
+# LogRateLimitBurst: Max messages per interval (default: 10000)
+# These settings allow ~333 messages/second, which should be sufficient
+# Adjust if you need more verbose logging or want stricter limits
+LogRateLimitIntervalSec=30
+LogRateLimitBurst=10000
+
+# Maximum log size per service (default: 10% of systemd journal size)
+# This limits how much space this service's logs can use
+# Set to 0 to disable per-service limit (use global journald limits instead)
+# LogsMaxBytes=100M
 
 [Install]
 WantedBy=default.target
