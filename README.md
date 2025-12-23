@@ -15,6 +15,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - Markdown rendering with syntax highlighting
 - **Copy messages**: One-click copy button on messages (excludes file attachments)
 - **Version update banner**: Automatic detection of new deployments with reload prompt
+- **Cost tracking**: Track API costs per conversation and per month with currency conversion
 - Google Sign In authentication with email whitelist
 - Modern dark theme, mobile-first responsive design
 - **Voice input**: Speech-to-text using Web Speech API (Chrome, Safari), with language selection
@@ -78,6 +79,9 @@ ALLOWED_FILE_TYPES=image/png,image/jpeg,image/gif,image/webp,application/pdf,tex
 GUNICORN_WORKERS=2                  # Number of worker processes
 GUNICORN_TIMEOUT=300                # 5 minutes default
 SSE_KEEPALIVE_INTERVAL=15           # Heartbeat interval for streaming
+
+# Cost tracking (optional)
+COST_CURRENCY=CZK                   # Display currency (USD, CZK, EUR, GBP)
 ```
 
 ### Setting up Google Sign In

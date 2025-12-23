@@ -10,7 +10,9 @@ import {
   COPY_ICON,
   SOURCES_ICON,
   SPARKLES_ICON,
+  COST_ICON,
 } from '../utils/icons';
+import { costs } from '../api/client';
 import { useStore } from '../state/store';
 import type { Message, FileMetadata, Source, GeneratedImage } from '../types/api';
 
@@ -147,16 +149,19 @@ export function addMessageToUI(
     contentWrapper.appendChild(content);
   }
 
-  // Add message actions (timestamp + sources/imagegen buttons + copy button)
+  // Add message actions (timestamp + sources/imagegen/cost buttons + copy button)
   const actions = document.createElement('div');
   actions.className = 'message-actions';
   const timeStr = message.created_at ? formatMessageTime(message.created_at) : '';
   const hasSources = message.sources && message.sources.length > 0;
   const hasGeneratedImages = message.generated_images && message.generated_images.length > 0;
+  // Only show cost button for assistant messages (they have costs)
+  const showCostButton = message.role === 'assistant';
   actions.innerHTML = `
     ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
     ${hasSources ? `<button class="message-sources-btn" title="View sources (${message.sources!.length})">${SOURCES_ICON}</button>` : ''}
     ${hasGeneratedImages ? `<button class="message-imagegen-btn" title="View image generation info">${SPARKLES_ICON}</button>` : ''}
+    ${showCostButton ? `<button class="message-cost-btn" title="View message cost">${COST_ICON}</button>` : ''}
     <button class="message-copy-btn" title="Copy message">
       ${COPY_ICON}
     </button>
@@ -178,11 +183,34 @@ export function addMessageToUI(
   if (hasGeneratedImages) {
     const imagegenBtn = actions.querySelector('.message-imagegen-btn');
     imagegenBtn?.addEventListener('click', () => {
+      // Add message_id to generated images for cost lookup
+      const imagesWithMessageId = message.generated_images!.map(img => ({
+        ...img,
+        message_id: message.id,
+      }));
       window.dispatchEvent(
         new CustomEvent('imagegen:open', {
-          detail: message.generated_images,
+          detail: imagesWithMessageId,
         })
       );
+    });
+  }
+
+  // Add cost button click handler
+  if (showCostButton) {
+    const costBtn = actions.querySelector('.message-cost-btn');
+    costBtn?.addEventListener('click', async () => {
+      try {
+        const costData = await costs.getMessageCost(message.id);
+        window.dispatchEvent(
+          new CustomEvent('message-cost:open', {
+            detail: costData,
+          })
+        );
+      } catch (error) {
+        console.warn('Failed to fetch message cost:', error);
+        // Silently fail - cost display is optional
+      }
     });
   }
 
@@ -352,7 +380,8 @@ export function finalizeStreamingMessage(
   createdAt?: string,
   sources?: Source[],
   generatedImages?: GeneratedImage[],
-  files?: FileMetadata[]
+  files?: FileMetadata[],
+  role: 'user' | 'assistant' = 'assistant'
 ): void {
   messageEl.classList.remove('streaming');
   messageEl.dataset.messageId = messageId;
@@ -381,10 +410,13 @@ export function finalizeStreamingMessage(
     const timeStr = createdAt ? formatMessageTime(createdAt) : '';
     const hasSources = sources && sources.length > 0;
     const hasGeneratedImages = generatedImages && generatedImages.length > 0;
+    // Only show cost button for assistant messages (they have costs)
+    const showCostButton = role === 'assistant';
     actions.innerHTML = `
       ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
       ${hasSources ? `<button class="message-sources-btn" title="View sources (${sources!.length})">${SOURCES_ICON}</button>` : ''}
       ${hasGeneratedImages ? `<button class="message-imagegen-btn" title="View image generation info">${SPARKLES_ICON}</button>` : ''}
+      ${showCostButton ? `<button class="message-cost-btn" title="View message cost">${COST_ICON}</button>` : ''}
       <button class="message-copy-btn" title="Copy message">
         ${COPY_ICON}
       </button>
@@ -406,11 +438,34 @@ export function finalizeStreamingMessage(
     if (hasGeneratedImages) {
       const imagegenBtn = actions.querySelector('.message-imagegen-btn');
       imagegenBtn?.addEventListener('click', () => {
+        // Add message_id to generated images for cost lookup
+        const imagesWithMessageId = generatedImages!.map(img => ({
+          ...img,
+          message_id: messageId,
+        }));
         window.dispatchEvent(
           new CustomEvent('imagegen:open', {
-            detail: generatedImages,
+            detail: imagesWithMessageId,
           })
         );
+      });
+    }
+
+    // Add cost button click handler
+    if (showCostButton) {
+      const costBtn = actions.querySelector('.message-cost-btn');
+      costBtn?.addEventListener('click', async () => {
+        try {
+          const costData = await costs.getMessageCost(messageId);
+          window.dispatchEvent(
+            new CustomEvent('message-cost:open', {
+              detail: costData,
+            })
+          );
+        } catch (error) {
+          console.warn('Failed to fetch message cost:', error);
+          // Silently fail - cost display is optional
+        }
       });
     }
 

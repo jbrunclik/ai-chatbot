@@ -448,6 +448,22 @@ def chat_node(state: AgentState, model: ChatGoogleGenerativeAI) -> dict[str, lis
     else:
         logger.debug("LLM response received", extra={"has_content": bool(response.content)})
 
+    # Log usage metadata if available
+    # Note: usage_metadata is a direct attribute, not in response_metadata
+    if isinstance(response, AIMessage):
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
+            logger.debug(
+                "Usage metadata captured",
+                extra={
+                    "input_tokens": usage.get("input_tokens", 0),
+                    "output_tokens": usage.get("output_tokens", 0),
+                    "total_tokens": usage.get("total_tokens", 0),
+                },
+            )
+        else:
+            logger.debug("No usage_metadata attribute found on AIMessage")
+
     return {"messages": [response]}
 
 
@@ -624,7 +640,9 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
-    ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]]], None, None]:
+    ) -> Generator[
+        str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]], None, None
+    ]:
         """
         Stream response tokens using LangGraph's stream method.
 
@@ -636,10 +654,11 @@ class ChatAgent:
 
         Yields:
             - str: Text tokens for streaming display
-            - tuple: Final (content, metadata, tool_results) where:
+            - tuple: Final (content, metadata, tool_results, usage_info) where:
               - content: Clean response text (metadata stripped)
               - metadata: Extracted metadata dict (sources, generated_images, etc.)
               - tool_results: List of tool message dicts for server-side processing
+              - usage_info: Dict with 'input_tokens' and 'output_tokens'
         """
         messages = self._build_messages(text, files, history, force_tools=force_tools)
 
@@ -652,6 +671,10 @@ class ChatAgent:
         in_metadata = False
         # Capture tool results for server-side extraction (e.g., generated images)
         tool_results: list[dict[str, Any]] = []
+        # Track token counts as we stream (memory efficient - only store numbers, not message objects)
+        total_input_tokens = 0
+        total_output_tokens = 0
+        chunk_count = 0
 
         # Stream the graph execution with messages mode for token-level streaming
         for event in self.graph.stream(
@@ -674,6 +697,24 @@ class ChatAgent:
 
                 # Only yield content from AI message chunks (not tool calls or tool results)
                 if isinstance(message_chunk, AIMessageChunk):
+                    # Extract usage metadata immediately (don't store the message object)
+                    chunk_count += 1
+                    if hasattr(message_chunk, "usage_metadata") and message_chunk.usage_metadata:
+                        usage = message_chunk.usage_metadata
+                        if isinstance(usage, dict):
+                            input_tokens = usage.get("input_tokens", 0)
+                            output_tokens = usage.get("output_tokens", 0)
+                            if input_tokens > 0 or output_tokens > 0:
+                                total_input_tokens += input_tokens
+                                total_output_tokens += output_tokens
+                                logger.debug(
+                                    "Found usage in chunk",
+                                    extra={
+                                        "input_tokens": input_tokens,
+                                        "output_tokens": output_tokens,
+                                    },
+                                )
+
                     # Skip chunks that are only tool calls (no text content)
                     if message_chunk.tool_calls or message_chunk.tool_call_chunks:
                         continue
@@ -713,8 +754,33 @@ class ChatAgent:
         # Extract metadata and yield final tuple
         clean_content, metadata = extract_metadata_from_response(full_response)
 
-        # Final yield: (content, metadata, tool_results) for server processing
-        yield (clean_content, metadata, tool_results)
+        # Log a warning if we didn't find any usage metadata (should be rare)
+        if total_input_tokens == 0 and total_output_tokens == 0 and chunk_count > 0:
+            logger.warning(
+                "No usage metadata found in streaming chunks",
+                extra={
+                    "chunk_count": chunk_count,
+                    "note": "This is unusual - Gemini streaming chunks typically include usage_metadata. Cost tracking may be inaccurate for this request.",
+                },
+            )
+
+        usage_info = {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+        }
+
+        if total_input_tokens > 0 or total_output_tokens > 0:
+            logger.debug(
+                "Usage metadata aggregated from streaming chunks",
+                extra={
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                    "chunk_count": chunk_count,
+                },
+            )
+
+        # Final yield: (content, metadata, tool_results, usage_info) for server processing
+        yield (clean_content, metadata, tool_results, usage_info)
 
     def chat_with_state(
         self,
@@ -722,7 +788,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         previous_state: dict[str, Any] | None = None,
         force_tools: list[str] | None = None,
-    ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
+    ) -> tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
         """
         Chat with persistent state for multi-turn agent workflows.
 
@@ -733,8 +799,11 @@ class ChatAgent:
             force_tools: Optional list of tool names that must be used
 
         Returns:
-            Tuple of (response text, new state for persistence, tool results)
-            Tool results are returned separately since they're not persisted in state.
+            Tuple of (response text, new state for persistence, tool results, usage info)
+            - response text: The assistant's response
+            - new state: State for persistence
+            - tool results: Tool execution results (not persisted)
+            - usage_info: Dict with 'input_tokens' and 'output_tokens'
         """
         # Restore previous messages or start fresh
         messages: list[BaseMessage] = []
@@ -806,6 +875,45 @@ class ChatAgent:
         if tool_results:
             logger.info("Tool results captured", extra={"tool_result_count": len(tool_results)})
 
+        # Aggregate usage metadata from all AIMessages
+        # Note: usage_metadata is a direct attribute on AIMessage, not in response_metadata
+        total_input_tokens = 0
+        total_output_tokens = 0
+        for msg in result["messages"]:
+            if isinstance(msg, AIMessage):
+                # Check usage_metadata as a direct attribute (this is where LangChain puts it)
+                if hasattr(msg, "usage_metadata") and msg.usage_metadata:
+                    usage = msg.usage_metadata
+                    if isinstance(usage, dict):
+                        # Gemini provides input_tokens and output_tokens directly
+                        input_tokens = usage.get("input_tokens", 0)
+                        output_tokens = usage.get("output_tokens", 0)
+
+                        if input_tokens > 0 or output_tokens > 0:
+                            total_input_tokens += input_tokens
+                            total_output_tokens += output_tokens
+                            logger.debug(
+                                "Found usage metadata in AIMessage",
+                                extra={
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                },
+                            )
+
+        usage_info = {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+        }
+
+        if total_input_tokens > 0 or total_output_tokens > 0:
+            logger.debug(
+                "Usage metadata aggregated",
+                extra={
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                },
+            )
+
         # Serialize state for persistence
         # NOTE: We exclude ToolMessages from persisted state because:
         # 1. Tool results (especially generate_image) can contain large binary data
@@ -826,7 +934,7 @@ class ChatAgent:
                     new_state["messages"].append({"type": "ai", "content": content})
             # Skip ToolMessages - they contain execution details that shouldn't persist
 
-        return response_text, new_state, tool_results
+        return response_text, new_state, tool_results, usage_info
 
 
 def generate_title(user_message: str, assistant_response: str) -> str:

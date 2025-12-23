@@ -3,8 +3,12 @@ import type {
   ChatResponse,
   Conversation,
   ConversationsResponse,
+  CostHistoryResponse,
+  ConversationCostResponse,
   ErrorResponse,
   FileUpload,
+  MessageCostResponse,
+  MonthlyCostResponse,
   ModelsResponse,
   StreamEvent,
   UploadConfig,
@@ -274,6 +278,32 @@ export const version = {
   async get(): Promise<VersionResponse> {
     const response = await fetch('/api/version');
     return response.json() as Promise<VersionResponse>;
+  },
+};
+
+// Cost tracking endpoints
+export const costs = {
+  async getConversationCost(conversationId: string): Promise<ConversationCostResponse> {
+    return request<ConversationCostResponse>(`/api/conversations/${conversationId}/cost`);
+  },
+
+  async getMonthlyCost(year?: number, month?: number): Promise<MonthlyCostResponse> {
+    const params = new URLSearchParams();
+    if (year) params.set('year', year.toString());
+    if (month) params.set('month', month.toString());
+    const query = params.toString();
+    return request<MonthlyCostResponse>(`/api/users/me/costs/monthly${query ? `?${query}` : ''}`);
+  },
+
+  async getCostHistory(limit?: number): Promise<CostHistoryResponse> {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', limit.toString());
+    const query = params.toString();
+    return request<CostHistoryResponse>(`/api/users/me/costs/history${query ? `?${query}` : ''}`);
+  },
+
+  async getMessageCost(messageId: string): Promise<MessageCostResponse> {
+    return request<MessageCostResponse>(`/api/messages/${messageId}/cost`);
   },
 };
 

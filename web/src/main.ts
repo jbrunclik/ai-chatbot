@@ -2,7 +2,7 @@ import './styles/main.css';
 import 'highlight.js/styles/github-dark.css';
 
 import { useStore } from './state/store';
-import { conversations, chat, models, config } from './api/client';
+import { conversations, chat, models, config, costs } from './api/client';
 import { initGoogleSignIn, renderGoogleButton, checkAuth, logout } from './auth/google';
 import {
   renderConversationsList,
@@ -10,6 +10,7 @@ import {
   setActiveConversation,
   toggleSidebar,
   closeSidebar,
+  updateMonthlyCost,
 } from './components/Sidebar';
 import {
   renderMessages,
@@ -35,6 +36,8 @@ import { initFileUpload, clearPendingFiles, getPendingFiles } from './components
 import { initLightbox } from './components/Lightbox';
 import { initSourcesPopup } from './components/SourcesPopup';
 import { initImageGenPopup } from './components/ImageGenPopup';
+import { initMessageCostPopup } from './components/MessageCostPopup';
+import { costHistoryPopup, getCostHistoryPopupHtml } from './components/CostHistoryPopup';
 import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
 import { initScrollToBottom, checkScrollButtonVisibility } from './components/ScrollToBottom';
 import { initVersionBanner } from './components/VersionBanner';
@@ -112,6 +115,7 @@ function renderAppShell(): string {
               ${SEND_ICON}
             </button>
           </div>
+          <div id="conversation-cost" class="conversation-cost-display"></div>
         </div>
       </div>
     </main>
@@ -148,6 +152,16 @@ function renderAppShell(): string {
       </div>
     </div>
 
+    <!-- Message Cost Popup -->
+    <div id="message-cost-popup" class="info-popup hidden">
+      <div class="info-popup-content">
+        <!-- Content populated dynamically -->
+      </div>
+    </div>
+
+    <!-- Cost History Popup -->
+    ${getCostHistoryPopupHtml()}
+
     <!-- Login overlay -->
     <div id="login-overlay" class="login-overlay hidden">
       <div class="login-box">
@@ -175,6 +189,8 @@ async function init(): Promise<void> {
   initLightbox();
   initSourcesPopup();
   initImageGenPopup();
+  initMessageCostPopup();
+  costHistoryPopup.init();
   initScrollToBottom();
   initVersionBanner();
   setupEventListeners();
@@ -247,6 +263,32 @@ async function loadInitialData(): Promise<void> {
   }
 }
 
+// Update conversation cost display and monthly cost in sidebar
+async function updateConversationCost(convId: string | null): Promise<void> {
+  const costEl = getElementById<HTMLDivElement>('conversation-cost');
+  if (!costEl) return;
+
+  if (!convId || isTempConversation(convId)) {
+    costEl.textContent = '';
+    return;
+  }
+
+  try {
+    const costData = await costs.getConversationCost(convId);
+    // Only show cost if it's greater than 0
+    if (costData.cost_usd > 0) {
+      costEl.textContent = costData.formatted;
+    } else {
+      costEl.textContent = '';
+    }
+    // Also update the monthly cost in the sidebar
+    updateMonthlyCost();
+  } catch {
+    // Ignore errors - cost display is optional
+    costEl.textContent = '';
+  }
+}
+
 // Switch to a conversation and update UI
 function switchToConversation(conv: Conversation): void {
   const store = useStore.getState();
@@ -261,6 +303,9 @@ function switchToConversation(conv: Conversation): void {
   renderModelDropdown();
   closeSidebar();
   focusMessageInput();
+
+  // Update conversation cost
+  updateConversationCost(conv.id);
 }
 
 // Select a conversation
@@ -303,6 +348,9 @@ function createConversation(): void {
   // Create a local-only conversation with a temp ID
   const tempId = `temp-${Date.now()}`;
   const now = new Date().toISOString();
+
+  // Clear cost display for new conversation
+  updateConversationCost(null);
   const conv = {
     id: tempId,
     title: DEFAULT_CONVERSATION_TITLE,
@@ -512,6 +560,9 @@ async function sendStreamingMessage(
 
         // Update conversation title if this was the first message
         await refreshConversationTitle(convId);
+
+        // Update conversation cost
+        await updateConversationCost(convId);
       } else if (event.type === 'error') {
         console.error('Stream error:', event.message);
         messageEl.remove();
@@ -600,6 +651,9 @@ async function sendBatchMessage(
 
     // Update conversation title if this was the first message
     await refreshConversationTitle(convId);
+
+    // Update conversation cost
+    await updateConversationCost(convId);
   } catch (error) {
     hideLoadingIndicator();
     throw error;
@@ -686,10 +740,20 @@ function setupEventListeners(): void {
   // Mobile menu button
   getElementById('menu-btn')?.addEventListener('click', toggleSidebar);
 
-  // Logout button (rendered dynamically)
-  getElementById('user-info')?.addEventListener('click', (e) => {
+  // User info area clicks (logout and monthly cost buttons)
+  getElementById('user-info')?.addEventListener('click', async (e) => {
     if ((e.target as HTMLElement).closest('#logout-btn')) {
       logout();
+      return;
+    }
+    if ((e.target as HTMLElement).closest('#monthly-cost')) {
+      try {
+        const history = await costs.getCostHistory(12);
+        const { openCostHistory } = await import('./components/CostHistoryPopup');
+        openCostHistory(history);
+      } catch (error) {
+        console.error('Failed to load cost history:', error);
+      }
     }
   });
 

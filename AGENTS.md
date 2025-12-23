@@ -201,7 +201,7 @@ The app can generate images using Gemini's image generation model (`gemini-3-pro
 4. **Backend extracts images**: `extract_generated_images_from_tool_results()` in [routes.py](src/api/routes.py) parses tool results
 5. **Images stored as files**: Generated images are stored as file attachments on the message
 6. **Metadata stored in DB**: Messages table has a `generated_images` column (JSON array)
-7. **UI shows sparkles button**: A sparkles icon appears in message actions when generated images exist, opening a popup showing the prompt used
+7. **UI shows sparkles button**: A sparkles icon appears in message actions when generated images exist, opening a popup showing the prompt used and the cost of image generation (excluding prompt tokens)
 
 ### Key files
 - [tools.py](src/agent/tools.py) - `generate_image()` tool using google-genai SDK
@@ -348,6 +348,59 @@ In development mode, the version will be `null` (no manifest). Use the test help
 ```javascript
 window.__testVersionBanner()
 ```
+
+## Cost Tracking
+
+The app tracks API costs per conversation and per user per calendar month, accounting for token usage and image generation.
+
+### How it works
+1. **Token usage tracking**: Token counts are extracted from `usage_metadata` in LangChain's `AIMessage` and `AIMessageChunk` objects (both batch and streaming modes)
+2. **Image generation costs**: Image generation costs are calculated from `usage_metadata` returned by the Gemini image generation API
+3. **Cost calculation**: Costs are calculated using model pricing from [config.py](src/config.py) and converted to the configured currency (default: CZK)
+4. **Database storage**: Costs are stored in the `message_costs` table with token counts and total cost in USD
+5. **UI display**:
+   - Conversation cost is shown under the input box (updates after each message)
+   - Monthly cost is shown in the sidebar footer (clickable to view history)
+   - Cost history popup shows monthly breakdown with total
+   - Message cost button (dollar icon) appears on assistant messages, opening a popup with detailed cost breakdown
+   - Image generation popup shows the cost of image generation only (excluding prompt tokens)
+
+### Key files
+- [costs.py](src/utils/costs.py) - Cost calculation and currency conversion utilities
+- [config.py](src/config.py) - Model pricing (`MODEL_PRICING`) and currency rates (`CURRENCY_RATES`)
+- [models.py](src/db/models.py) - `save_message_cost()`, `get_message_cost()`, `get_conversation_cost()`, `get_user_monthly_cost()`, `get_user_cost_history()`, `delete_conversation()` (includes message_costs cleanup)
+- [chat_agent.py](src/agent/chat_agent.py) - Token usage extraction from `usage_metadata` (memory efficient - only tracks numbers, not message objects)
+- [tools.py](src/agent/tools.py) - Image generation tool includes `usage_metadata` in response
+- [api/utils.py](src/api/utils.py) - `calculate_and_save_message_cost()` centralizes cost calculation and saving for both batch and streaming, `calculate_image_generation_cost_from_tool_results()` extracts image costs from tool results
+- [routes.py](src/api/routes.py) - Calls `calculate_and_save_message_cost()` in batch/stream endpoints, cost API endpoints (`/api/messages/<message_id>/cost`, `/api/conversations/<conv_id>/cost`, `/api/users/me/costs/*`)
+- [main.ts](web/src/main.ts) - `updateConversationCost()` updates cost display after messages
+- [CostHistoryPopup.ts](web/src/components/CostHistoryPopup.ts) - Cost history popup component
+- [MessageCostPopup.ts](web/src/components/MessageCostPopup.ts) - Message cost popup component
+- [ImageGenPopup.ts](web/src/components/ImageGenPopup.ts) - Image generation popup (shows image generation cost)
+- [Sidebar.ts](web/src/components/Sidebar.ts) - Monthly cost display in footer
+- [Messages.ts](web/src/components/Messages.ts) - Cost button rendering in message actions
+
+### Cost calculation details
+- **Token costs**: Calculated from `input_tokens` and `output_tokens` using per-million-token pricing
+- **Image generation costs**: Calculated from `usage_metadata` with separate pricing for prompt tokens (input) and candidate/thought tokens (output). Stored separately in `image_generation_cost_usd` column for display in image generation popup
+- **Other tools**: Web search and URL fetching are free (no cost tracking)
+- **Currency conversion**: Costs are stored in USD, converted to display currency (configurable via `COST_CURRENCY` env var)
+
+### Database schema
+The `message_costs` table stores:
+- `cost_usd`: Total cost (tokens + image generation)
+- `image_generation_cost_usd`: Cost of image generation only (separate from token costs)
+- Token counts and model information for detailed breakdown
+
+### Memory efficiency
+Token usage is tracked efficiently during streaming by extracting and accumulating counts immediately from each chunk, rather than storing entire message objects. Only the final token counts are kept in memory.
+
+### Configuration
+- `COST_CURRENCY`: Display currency (default: `CZK`)
+- `MODEL_PRICING`: Model pricing per million tokens (in [config.py](src/config.py))
+- `CURRENCY_RATES`: Exchange rates for currency conversion (in [config.py](src/config.py))
+
+**Note**: Currency rates and model pricing are currently hardcoded in `config.py`. See [TODO.md](TODO.md) for planned automated updates.
 
 ## Common Tasks
 

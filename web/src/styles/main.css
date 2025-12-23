@@ -218,9 +218,16 @@ body {
 
 .user-info {
     display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.user-actions {
+    display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    width: 100%;
 }
 
 .user-profile {
@@ -280,6 +287,38 @@ body {
 
 .btn-logout:hover {
     background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.btn-monthly-cost {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: left;
+}
+
+.btn-monthly-cost:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--accent);
+    color: var(--text-primary);
+}
+
+.cost-label {
+    color: var(--text-muted);
+}
+
+.cost-value {
+    font-weight: 500;
     color: var(--text-primary);
 }
 
@@ -974,6 +1013,15 @@ body {
     border-radius: var(--radius);
     padding: 8px 16px;
     align-items: flex-end;
+}
+
+.conversation-cost-display {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    text-align: right;
+    padding: 4px 16px 0;
+    min-height: 16px;
+    font-variant-numeric: tabular-nums;
 }
 
 #message-input {
@@ -2023,24 +2071,156 @@ body {
 }
 
 .imagegen-body {
-    padding: 0;
+    padding: 16px;
 }
 
 .imagegen-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+}
+
+/* Cost History Popup Content */
+.cost-history-body {
+    padding: 0;
+}
+
+.cost-history-empty {
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.cost-history-empty p {
+    margin: 8px 0;
+}
+
+.cost-history-content {
+    padding: 16px;
+}
+
+.cost-history-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+    background-color: var(--bg-secondary);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.cost-history-table thead {
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+    border-bottom: 2px solid var(--border);
+}
+
+.cost-history-table th {
+    padding: 14px 16px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.cost-history-table th:last-child,
+.cost-history-table td:last-child {
+    text-align: right;
+}
+
+.cost-history-table tbody {
+    background-color: var(--bg-primary);
+}
+
+.cost-history-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.cost-history-table tbody tr:not(:last-child) {
+    border-bottom: 1px solid var(--border);
+}
+
+.cost-history-table tbody tr:hover {
+    background-color: var(--bg-hover);
+}
+
+.cost-history-table tbody tr:first-child {
+    background-color: var(--bg-tertiary);
+    border-left: 3px solid var(--accent);
+}
+
+.cost-history-table tbody tr:first-child:hover {
+    background-color: var(--bg-hover);
+}
+
+.cost-history-table td {
+    padding: 14px 16px;
+    color: var(--text-secondary);
+}
+
+.cost-history-table tbody tr:first-child td {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.cost-history-table tfoot {
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+    border-top: 2px solid var(--border);
+}
+
+.cost-history-table tfoot td {
+    padding: 18px 16px;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+}
+
+.cost-amount {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: 0.3px;
+}
+
+.cost-history-table tbody tr:first-child .cost-amount {
+    color: var(--accent);
+}
+
+.cost-messages {
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-weight: 400;
+}
+
+.cost-history-total .cost-amount {
+    font-size: 1.0625rem;
+    font-weight: 700;
+}
+
+.cost-history-total .cost-messages {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
 }
 
 .imagegen-item {
     display: flex;
     align-items: flex-start;
     gap: 12px;
-    padding: 12px 14px;
-    border-radius: var(--radius-sm);
+    padding: 12px 0;
+    text-decoration: none;
     color: var(--text-primary);
-    border: 1px solid var(--border);
-    background-color: var(--bg-tertiary);
+    transition: all 0.15s;
+    border-bottom: 1px solid var(--border);
+}
+
+.imagegen-item:last-child {
+    border-bottom: none;
+}
+
+.imagegen-item:hover {
+    background-color: transparent;
 }
 
 .imagegen-number {
@@ -2058,24 +2238,40 @@ body {
     margin-top: 2px;
 }
 
-.imagegen-details {
-    flex: 1;
-    min-width: 0;
-}
-
-.imagegen-label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
 .imagegen-prompt {
+    flex: 1;
     font-weight: 500;
     color: var(--text-primary);
     line-height: 1.4;
     word-break: break-word;
+}
+
+.imagegen-cost-loading {
+    padding: 16px 0;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.imagegen-cost {
+    margin-top: 16px;
+    padding: 16px 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.imagegen-cost .imagegen-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+.imagegen-cost .imagegen-cost-value {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 1rem;
 }
 
 /* Image generation button in message actions */
@@ -2100,4 +2296,70 @@ body {
 .message-imagegen-btn svg {
     width: 16px;
     height: 16px;
+}
+
+.message-cost-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+}
+
+.message-cost-btn:hover {
+    color: var(--accent);
+    background-color: var(--bg-tertiary);
+}
+
+.message-cost-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Message Cost Popup */
+.message-cost-content {
+    padding: 16px;
+}
+
+.message-cost-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
+}
+
+.message-cost-table tbody tr {
+    border-bottom: 1px solid var(--border);
+}
+
+.message-cost-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.message-cost-table td {
+    padding: 12px 0;
+    vertical-align: top;
+}
+
+.message-cost-table .message-cost-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+    padding-right: 16px;
+    white-space: nowrap;
+}
+
+.message-cost-table .message-cost-value {
+    color: var(--text-primary);
+    text-align: right;
+}
+
+.message-cost-table .message-cost-amount {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--accent);
 }

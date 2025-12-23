@@ -3,6 +3,7 @@ import json
 import queue
 import threading
 from collections.abc import Generator
+from datetime import datetime
 from typing import Any
 
 from flask import Blueprint, Response, request
@@ -11,12 +12,14 @@ from src.agent.chat_agent import ChatAgent, extract_metadata_from_response, gene
 from src.api.utils import (
     build_chat_response,
     build_stream_done_event,
+    calculate_and_save_message_cost,
     extract_metadata_fields,
 )
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
 from src.db.models import db
+from src.utils.costs import convert_currency, format_cost
 from src.utils.files import validate_files
 from src.utils.images import extract_generated_images_from_tool_results, process_image_files
 from src.utils.logging import get_logger, log_payload_snippet
@@ -389,7 +392,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     # Create agent and get response
     try:
         agent = ChatAgent(model_name=conv.model)
-        raw_response, new_state, tool_results = agent.chat_with_state(
+        raw_response, new_state, tool_results, usage_info = agent.chat_with_state(
             message_text, files, previous_state, force_tools=force_tools
         )
         logger.debug(
@@ -399,6 +402,9 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
                 "conversation_id": conv_id,
                 "response_length": len(raw_response),
                 "tool_results_count": len(tool_results),
+                "input_tokens": usage_info.get("input_tokens", 0),
+                "output_tokens": usage_info.get("output_tokens", 0),
+                "usage_info": str(usage_info),
             },
         )
 
@@ -449,6 +455,19 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             generated_images=generated_images_meta if generated_images_meta else None,
         )
         db.save_agent_state(conv_id, new_state)
+
+        # Calculate and save cost
+        calculate_and_save_message_cost(
+            assistant_msg.id,
+            conv_id,
+            user.id,
+            conv.model,
+            usage_info,
+            tool_results,
+            len(clean_response),
+            mode="batch",
+        )
+
         logger.info(
             "Batch chat completed",
             extra={
@@ -601,7 +620,10 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         """
         agent = ChatAgent(model_name=conv.model)
         token_queue: queue.Queue[
-            str | tuple[str, dict[str, Any], list[dict[str, Any]]] | None | Exception
+            str
+            | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]
+            | None
+            | Exception
         ] = queue.Queue()
 
         def stream_tokens() -> None:
@@ -638,10 +660,11 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         stream_thread = threading.Thread(target=stream_tokens, daemon=True)
         stream_thread.start()
 
-        # Variables to capture final content, metadata, and tool results
+        # Variables to capture final content, metadata, tool results, and usage info
         clean_content = ""
         metadata: dict[str, Any] = {}
         tool_results: list[dict[str, Any]] = []
+        usage_info: dict[str, Any] = {}
 
         try:
             while True:
@@ -657,8 +680,8 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                         yield f"data: {json.dumps({'type': 'error', 'message': str(item)})}\n\n"
                         return
                     elif isinstance(item, tuple):
-                        # Final tuple with (clean_content, metadata, tool_results)
-                        clean_content, metadata, tool_results = item
+                        # Final tuple with (clean_content, metadata, tool_results, usage_info)
+                        clean_content, metadata, tool_results, usage_info = item
                     else:
                         # Got a token string - yield to frontend
                         yield f"data: {json.dumps({'type': 'token', 'text': item})}\n\n"
@@ -706,6 +729,18 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                 files=gen_image_files if gen_image_files else None,
                 sources=sources if sources else None,
                 generated_images=generated_images_meta if generated_images_meta else None,
+            )
+
+            # Calculate and save cost for streaming
+            calculate_and_save_message_cost(
+                assistant_msg.id,
+                conv_id,
+                user.id,
+                conv.model,
+                usage_info,
+                tool_results,
+                len(clean_content),
+                mode="stream",
             )
 
             # Auto-generate title from first message if still default
@@ -1020,3 +1055,256 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
     except Exception as e:
         logger.error("Failed to decode file data", extra={"error": str(e)}, exc_info=True)
         return {"error": "Invalid file data"}, 500
+
+
+# ============================================================================
+# Cost Tracking Routes
+# ============================================================================
+
+
+@api.route("/conversations/<conv_id>/cost", methods=["GET"])
+@require_auth
+def get_conversation_cost(conv_id: str) -> tuple[dict[str, Any], int]:
+    """Get total cost for a conversation."""
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
+    logger.debug(
+        "Getting conversation cost", extra={"user_id": user.id, "conversation_id": conv_id}
+    )
+
+    # Verify conversation belongs to user
+    conv = db.get_conversation(conv_id, user.id)
+    if not conv:
+        logger.warning(
+            "Conversation not found for cost query",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
+        return {"error": "Conversation not found"}, 404
+
+    cost_usd = db.get_conversation_cost(conv_id)
+    cost_display = convert_currency(cost_usd, Config.COST_CURRENCY)
+    formatted_cost = format_cost(cost_display, Config.COST_CURRENCY)
+
+    logger.info(
+        "Conversation cost retrieved",
+        extra={"user_id": user.id, "conversation_id": conv_id, "cost_usd": cost_usd},
+    )
+
+    return {
+        "conversation_id": conv_id,
+        "cost_usd": cost_usd,
+        "cost": cost_display,
+        "currency": Config.COST_CURRENCY,
+        "formatted": formatted_cost,
+    }, 200
+
+
+@api.route("/messages/<message_id>/cost", methods=["GET"])
+@require_auth
+def get_message_cost(message_id: str) -> tuple[dict[str, Any], int]:
+    """Get cost for a specific message."""
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
+    logger.debug("Getting message cost", extra={"user_id": user.id, "message_id": message_id})
+
+    # Verify message belongs to user
+    message = db.get_message_by_id(message_id)
+    if not message:
+        logger.warning(
+            "Message not found for cost query",
+            extra={"user_id": user.id, "message_id": message_id},
+        )
+        return {"error": "Message not found"}, 404
+
+    conv = db.get_conversation(message.conversation_id, user.id)
+    if not conv:
+        logger.warning(
+            "Conversation not found for message cost query",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+            },
+        )
+        return {"error": "Message not found"}, 404
+
+    cost_data = db.get_message_cost(message_id)
+    if not cost_data:
+        logger.debug(
+            "No cost data found for message",
+            extra={"user_id": user.id, "message_id": message_id},
+        )
+        return {"error": "No cost data available for this message"}, 404
+
+    cost_display = convert_currency(cost_data["cost_usd"], Config.COST_CURRENCY)
+    formatted_cost = format_cost(cost_display, Config.COST_CURRENCY)
+
+    image_gen_cost_usd = cost_data.get("image_generation_cost_usd", 0.0)
+    image_gen_cost_display = convert_currency(image_gen_cost_usd, Config.COST_CURRENCY)
+    image_gen_cost_formatted = (
+        format_cost(image_gen_cost_display, Config.COST_CURRENCY)
+        if image_gen_cost_usd > 0
+        else None
+    )
+
+    logger.info(
+        "Message cost retrieved",
+        extra={
+            "user_id": user.id,
+            "message_id": message_id,
+            "cost_usd": cost_data["cost_usd"],
+            "image_generation_cost_usd": image_gen_cost_usd,
+        },
+    )
+
+    response = {
+        "message_id": message_id,
+        "cost_usd": cost_data["cost_usd"],
+        "cost": cost_display,
+        "currency": Config.COST_CURRENCY,
+        "formatted": formatted_cost,
+        "input_tokens": cost_data["input_tokens"],
+        "output_tokens": cost_data["output_tokens"],
+        "model": cost_data["model"],
+    }
+
+    if image_gen_cost_usd > 0:
+        response["image_generation_cost_usd"] = image_gen_cost_usd
+        response["image_generation_cost"] = image_gen_cost_display
+        response["image_generation_cost_formatted"] = image_gen_cost_formatted
+
+    return response, 200
+
+
+@api.route("/users/me/costs/monthly", methods=["GET"])
+@require_auth
+def get_user_monthly_cost() -> tuple[dict[str, Any], int]:
+    """Get cost for the current user in a specific month."""
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
+
+    # Get year and month from query params (default to current month)
+    now = datetime.now()
+    year = request.args.get("year", type=int) or now.year
+    month = request.args.get("month", type=int) or now.month
+
+    # Validate month range
+    if not (1 <= month <= 12):
+        logger.warning(
+            "Invalid month in request",
+            extra={"user_id": user.id, "year": year, "month": month},
+        )
+        return {"error": "Month must be between 1 and 12"}, 400
+
+    logger.debug(
+        "Getting user monthly cost",
+        extra={"user_id": user.id, "year": year, "month": month},
+    )
+
+    cost_data = db.get_user_monthly_cost(user.id, year, month)
+    cost_display = convert_currency(cost_data["total_usd"], Config.COST_CURRENCY)
+    formatted_cost = format_cost(cost_display, Config.COST_CURRENCY)
+
+    # Convert breakdown to display currency
+    breakdown_display = {}
+    for model, data in cost_data["breakdown"].items():
+        breakdown_display[model] = {
+            "total": convert_currency(data["total_usd"], Config.COST_CURRENCY),
+            "total_usd": data["total_usd"],
+            "message_count": data["message_count"],
+            "formatted": format_cost(
+                convert_currency(data["total_usd"], Config.COST_CURRENCY), Config.COST_CURRENCY
+            ),
+        }
+
+    logger.info(
+        "User monthly cost retrieved",
+        extra={
+            "user_id": user.id,
+            "year": year,
+            "month": month,
+            "total_usd": cost_data["total_usd"],
+            "message_count": cost_data["message_count"],
+        },
+    )
+
+    return {
+        "user_id": user.id,
+        "year": year,
+        "month": month,
+        "total_usd": cost_data["total_usd"],
+        "total": cost_display,
+        "currency": Config.COST_CURRENCY,
+        "formatted": formatted_cost,
+        "message_count": cost_data["message_count"],
+        "breakdown": breakdown_display,
+    }, 200
+
+
+@api.route("/users/me/costs/history", methods=["GET"])
+@require_auth
+def get_user_cost_history() -> tuple[dict[str, Any], int]:
+    """Get monthly cost history for the current user."""
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
+
+    limit = request.args.get("limit", type=int) or 12
+    # Cap limit to prevent performance issues (max 10 years of history)
+    limit = min(limit, 120)
+    logger.debug("Getting user cost history", extra={"user_id": user.id, "limit": limit})
+
+    history = db.get_user_cost_history(user.id, limit)
+
+    # Get current month
+    now = datetime.now()
+    current_year = now.year
+    current_month = now.month
+
+    # Convert each month's cost to display currency
+    history_display = []
+    current_month_in_history = False
+    for month_data in history:
+        year = month_data["year"]
+        month = month_data["month"]
+
+        # Check if this is the current month
+        if year == current_year and month == current_month:
+            current_month_in_history = True
+
+        cost_display = convert_currency(month_data["total_usd"], Config.COST_CURRENCY)
+        history_display.append(
+            {
+                "year": year,
+                "month": month,
+                "total_usd": month_data["total_usd"],
+                "total": cost_display,
+                "currency": Config.COST_CURRENCY,
+                "formatted": format_cost(cost_display, Config.COST_CURRENCY),
+                "message_count": month_data["message_count"],
+            }
+        )
+
+    # If current month is not in history, add it with $0 cost
+    if not current_month_in_history:
+        history_display.insert(
+            0,
+            {
+                "year": current_year,
+                "month": current_month,
+                "total_usd": 0.0,
+                "total": 0.0,
+                "currency": Config.COST_CURRENCY,
+                "formatted": format_cost(0.0, Config.COST_CURRENCY),
+                "message_count": 0,
+            },
+        )
+
+    logger.info(
+        "User cost history retrieved",
+        extra={"user_id": user.id, "months_count": len(history_display)},
+    )
+
+    return {
+        "user_id": user.id,
+        "history": history_display,
+    }, 200

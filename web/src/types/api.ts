@@ -17,6 +17,9 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   messages?: Message[];
+  cost?: number; // Cost in display currency (optional, fetched separately)
+  cost_usd?: number; // Cost in USD (optional)
+  cost_formatted?: string; // Formatted cost string (optional)
 }
 
 // Source types (for web search results)
@@ -29,6 +32,7 @@ export interface Source {
 export interface GeneratedImage {
   prompt: string;
   image_index?: number; // Optional - not currently set by backend, but reserved for future use
+  message_id?: string; // Optional - message ID for fetching cost
 }
 
 // Message types
@@ -115,4 +119,57 @@ export interface ErrorResponse {
 
 export interface VersionResponse {
   version: string | null;
+}
+
+// Cost tracking types
+export interface ConversationCostResponse {
+  conversation_id: string;
+  cost_usd: number;
+  cost: number;
+  currency: string;
+  formatted: string;
+}
+
+export interface MonthlyCostResponse {
+  user_id: string;
+  year: number;
+  month: number;
+  total_usd: number;
+  total: number;
+  currency: string;
+  formatted: string;
+  message_count: number;
+  breakdown: Record<string, {
+    total: number;
+    total_usd: number;
+    message_count: number;
+    formatted: string;
+  }>;
+}
+
+export interface CostHistoryResponse {
+  user_id: string;
+  history: Array<{
+    year: number;
+    month: number;
+    total_usd: number;
+    total: number;
+    currency: string;
+    formatted: string;
+    message_count: number;
+  }>;
+}
+
+export interface MessageCostResponse {
+  message_id: string;
+  cost_usd: number;
+  cost: number; // Cost in display currency
+  currency: string;
+  formatted: string;
+  input_tokens: number;
+  output_tokens: number;
+  model: string;
+  image_generation_cost_usd?: number;
+  image_generation_cost?: number; // Image generation cost in display currency
+  image_generation_cost_formatted?: string;
 }
