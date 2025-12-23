@@ -138,11 +138,16 @@ make setup
 # Deploy and start the service
 make deploy
 
+# Enable lingering (keeps service running after logout)
+sudo loginctl enable-linger $USER
+
 # View logs
 journalctl --user -u ai-chatbot -f
 ```
 
 The systemd service automatically runs `npm install && npm run build` before starting Gunicorn.
+
+**Important**: User services are tied to login sessions by default. The `enable-linger` command ensures your service continues running after you disconnect from SSH.
 
 ### Reverse Proxy (nginx)
 
