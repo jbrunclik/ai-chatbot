@@ -1,10 +1,18 @@
 import { escapeHtml, getElementById, scrollToBottom, isScrolledToBottom } from '../utils/dom';
 import { renderMarkdown, highlightAllCodeBlocks } from '../utils/markdown';
-import { observeThumbnail } from '../utils/thumbnails';
+import { observeThumbnail, isScrollOnImageLoadEnabled } from '../utils/thumbnails';
 import { createUserAvatarElement } from '../utils/avatar';
-import { AI_AVATAR_SVG, getFileIcon, DOWNLOAD_ICON, COPY_ICON, SOURCES_ICON } from '../utils/icons';
+import { checkScrollButtonVisibility } from './ScrollToBottom';
+import {
+  AI_AVATAR_SVG,
+  getFileIcon,
+  DOWNLOAD_ICON,
+  COPY_ICON,
+  SOURCES_ICON,
+  SPARKLES_ICON,
+} from '../utils/icons';
 import { useStore } from '../state/store';
-import type { Message, FileMetadata, Source } from '../types/api';
+import type { Message, FileMetadata, Source, GeneratedImage } from '../types/api';
 
 /**
  * Format a timestamp for display using system locale
@@ -59,7 +67,25 @@ export function renderMessages(messages: Message[]): void {
     addMessageToUI(msg, container);
   });
 
-  scrollToBottom(container);
+  // Check if there are images that need to be loaded from the server
+  // If scroll-on-image-load is enabled and there are such images, skip immediate scroll
+  // The image loading code will handle scrolling after all images load
+  const hasImagesToLoad = messages.some((msg) =>
+    msg.files?.some((f) => f.type.startsWith('image/') && !f.previewUrl)
+  );
+
+  if (isScrollOnImageLoadEnabled() && hasImagesToLoad) {
+    // Don't scroll immediately - let image loading code handle it after all images load
+    // This prevents scrolling before images have loaded and affected the layout
+  } else {
+    // No images to load, or scroll-on-load is disabled - scroll immediately
+    scrollToBottom(container);
+  }
+
+  // Update button visibility after rendering messages
+  requestAnimationFrame(() => {
+    checkScrollButtonVisibility();
+  });
 }
 
 /**
@@ -101,13 +127,13 @@ export function addMessageToUI(
   content.className = 'message-content';
 
   if (message.role === 'assistant') {
-    // Assistant: files outside bubble, then text
-    if (message.files && message.files.length > 0) {
-      const filesContainer = renderMessageFiles(message.files, message.id);
-      contentWrapper.appendChild(filesContainer);
-    }
+    // Assistant: text first, then files inside the bubble (same as user)
     content.innerHTML = renderMarkdown(message.content);
     highlightAllCodeBlocks(content);
+    if (message.files && message.files.length > 0) {
+      const filesContainer = renderMessageFiles(message.files, message.id);
+      content.appendChild(filesContainer);
+    }
     contentWrapper.appendChild(content);
   } else {
     // User: text first, then files inside the bubble
@@ -121,14 +147,16 @@ export function addMessageToUI(
     contentWrapper.appendChild(content);
   }
 
-  // Add message actions (timestamp + sources button + copy button)
+  // Add message actions (timestamp + sources/imagegen buttons + copy button)
   const actions = document.createElement('div');
   actions.className = 'message-actions';
   const timeStr = message.created_at ? formatMessageTime(message.created_at) : '';
   const hasSources = message.sources && message.sources.length > 0;
+  const hasGeneratedImages = message.generated_images && message.generated_images.length > 0;
   actions.innerHTML = `
     ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
     ${hasSources ? `<button class="message-sources-btn" title="View sources (${message.sources!.length})">${SOURCES_ICON}</button>` : ''}
+    ${hasGeneratedImages ? `<button class="message-imagegen-btn" title="View image generation info">${SPARKLES_ICON}</button>` : ''}
     <button class="message-copy-btn" title="Copy message">
       ${COPY_ICON}
     </button>
@@ -140,7 +168,19 @@ export function addMessageToUI(
     sourcesBtn?.addEventListener('click', () => {
       window.dispatchEvent(
         new CustomEvent('sources:open', {
-          detail: { sources: message.sources },
+          detail: message.sources,
+        })
+      );
+    });
+  }
+
+  // Add generated images button click handler
+  if (hasGeneratedImages) {
+    const imagegenBtn = actions.querySelector('.message-imagegen-btn');
+    imagegenBtn?.addEventListener('click', () => {
+      window.dispatchEvent(
+        new CustomEvent('imagegen:open', {
+          detail: message.generated_images,
         })
       );
     });
@@ -269,6 +309,10 @@ export function addStreamingMessage(): HTMLElement {
 
   container.appendChild(messageEl);
   scrollToBottom(container);
+  // Update button visibility after adding message and scrolling
+  requestAnimationFrame(() => {
+    checkScrollButtonVisibility();
+  });
 
   return messageEl;
 }
@@ -292,6 +336,10 @@ export function updateStreamingMessage(
 
   if (wasAtBottom) {
     scrollToBottom(getElementById('messages')!);
+    // Update button visibility after scrolling
+    requestAnimationFrame(() => {
+      checkScrollButtonVisibility();
+    });
   }
 }
 
@@ -302,7 +350,9 @@ export function finalizeStreamingMessage(
   messageEl: HTMLElement,
   messageId: string,
   createdAt?: string,
-  sources?: Source[]
+  sources?: Source[],
+  generatedImages?: GeneratedImage[],
+  files?: FileMetadata[]
 ): void {
   messageEl.classList.remove('streaming');
   messageEl.dataset.messageId = messageId;
@@ -315,18 +365,26 @@ export function finalizeStreamingMessage(
   const content = messageEl.querySelector('.message-content');
   if (content) {
     highlightAllCodeBlocks(content as HTMLElement);
+
+    // Add files (generated images) inside the content bubble
+    if (files && files.length > 0) {
+      const filesContainer = renderMessageFiles(files, messageId);
+      content.appendChild(filesContainer);
+    }
   }
 
-  // Add message actions (timestamp + sources button + copy button)
+  // Add message actions (timestamp + sources/imagegen buttons + copy button)
   const contentWrapper = messageEl.querySelector('.message-content-wrapper');
   if (contentWrapper && !contentWrapper.querySelector('.message-actions')) {
     const actions = document.createElement('div');
     actions.className = 'message-actions';
     const timeStr = createdAt ? formatMessageTime(createdAt) : '';
     const hasSources = sources && sources.length > 0;
+    const hasGeneratedImages = generatedImages && generatedImages.length > 0;
     actions.innerHTML = `
       ${timeStr ? `<span class="message-time">${timeStr}</span>` : ''}
       ${hasSources ? `<button class="message-sources-btn" title="View sources (${sources!.length})">${SOURCES_ICON}</button>` : ''}
+      ${hasGeneratedImages ? `<button class="message-imagegen-btn" title="View image generation info">${SPARKLES_ICON}</button>` : ''}
       <button class="message-copy-btn" title="Copy message">
         ${COPY_ICON}
       </button>
@@ -338,7 +396,19 @@ export function finalizeStreamingMessage(
       sourcesBtn?.addEventListener('click', () => {
         window.dispatchEvent(
           new CustomEvent('sources:open', {
-            detail: { sources },
+            detail: sources,
+          })
+        );
+      });
+    }
+
+    // Add generated images button click handler
+    if (hasGeneratedImages) {
+      const imagegenBtn = actions.querySelector('.message-imagegen-btn');
+      imagegenBtn?.addEventListener('click', () => {
+        window.dispatchEvent(
+          new CustomEvent('imagegen:open', {
+            detail: generatedImages,
           })
         );
       });
@@ -346,6 +416,11 @@ export function finalizeStreamingMessage(
 
     contentWrapper.appendChild(actions);
   }
+
+  // Update button visibility after finalizing message
+  requestAnimationFrame(() => {
+    checkScrollButtonVisibility();
+  });
 }
 
 /**
@@ -361,6 +436,7 @@ export function showLoadingIndicator(): void {
   const loading = document.createElement('div');
   loading.className = 'message-loading';
   loading.innerHTML = `
+    <div class="message-avatar">${AI_AVATAR_SVG}</div>
     <div class="loading-dots">
       <span></span>
       <span></span>

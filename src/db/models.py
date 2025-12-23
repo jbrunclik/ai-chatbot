@@ -44,6 +44,7 @@ class Message:
     created_at: datetime
     files: list[dict[str, Any]] = field(default_factory=list)  # File attachments
     sources: list[dict[str, str]] | None = None  # Web sources for assistant messages
+    generated_images: list[dict[str, str]] | None = None  # Generated image metadata
 
 
 @dataclass
@@ -228,6 +229,7 @@ class Database:
         content: str,
         files: list[dict[str, Any]] | None = None,
         sources: list[dict[str, str]] | None = None,
+        generated_images: list[dict[str, str]] | None = None,
     ) -> Message:
         """Add a message to a conversation.
 
@@ -237,6 +239,7 @@ class Database:
             content: Plain text message
             files: Optional list of file attachments
             sources: Optional list of web sources (for assistant messages)
+            generated_images: Optional list of generated image metadata (for assistant messages)
 
         Returns:
             The created Message
@@ -246,12 +249,22 @@ class Database:
         files = files or []
         files_json = json.dumps(files) if files else None
         sources_json = json.dumps(sources) if sources else None
+        generated_images_json = json.dumps(generated_images) if generated_images else None
 
         with self._get_conn() as conn:
             conn.execute(
-                """INSERT INTO messages (id, conversation_id, role, content, files, sources, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (msg_id, conversation_id, role, content, files_json, sources_json, now.isoformat()),
+                """INSERT INTO messages (id, conversation_id, role, content, files, sources, generated_images, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    msg_id,
+                    conversation_id,
+                    role,
+                    content,
+                    files_json,
+                    sources_json,
+                    generated_images_json,
+                    now.isoformat(),
+                ),
             )
             # Update conversation's updated_at
             conn.execute(
@@ -268,6 +281,7 @@ class Database:
             created_at=now,
             files=files,
             sources=sources,
+            generated_images=generated_images,
         )
 
     def get_messages(self, conversation_id: str) -> list[Message]:
@@ -286,6 +300,9 @@ class Database:
                     created_at=datetime.fromisoformat(row["created_at"]),
                     files=json.loads(row["files"]) if row["files"] else [],
                     sources=json.loads(row["sources"]) if row["sources"] else None,
+                    generated_images=json.loads(row["generated_images"])
+                    if row["generated_images"]
+                    else None,
                 )
                 for row in rows
             ]
@@ -309,6 +326,9 @@ class Database:
                 created_at=datetime.fromisoformat(row["created_at"]),
                 files=json.loads(row["files"]) if row["files"] else [],
                 sources=json.loads(row["sources"]) if row["sources"] else None,
+                generated_images=json.loads(row["generated_images"])
+                if row["generated_images"]
+                else None,
             )
 
     # Agent state operations

@@ -25,6 +25,12 @@ export interface Source {
   url: string;
 }
 
+// Generated image metadata
+export interface GeneratedImage {
+  prompt: string;
+  image_index?: number; // Optional - not currently set by backend, but reserved for future use
+}
+
 // Message types
 export interface Message {
   id: string;
@@ -32,6 +38,7 @@ export interface Message {
   content: string;
   files?: FileMetadata[];
   sources?: Source[];
+  generated_images?: GeneratedImage[];
   created_at: string;
 }
 
@@ -67,7 +74,14 @@ export interface UploadConfig {
 // Streaming response events
 export type StreamEvent =
   | { type: 'token'; text: string }
-  | { type: 'done'; id: string; created_at: string; sources?: Source[] }
+  | {
+      type: 'done';
+      id: string;
+      created_at: string;
+      sources?: Source[];
+      generated_images?: GeneratedImage[];
+      files?: FileMetadata[];
+    }
   | { type: 'error'; message: string };
 
 // API response types
@@ -89,7 +103,9 @@ export interface ChatResponse {
   id: string;
   role: 'assistant';
   content: string;
+  files?: FileMetadata[];
   sources?: Source[];
+  generated_images?: GeneratedImage[];
   created_at: string;
 }
 

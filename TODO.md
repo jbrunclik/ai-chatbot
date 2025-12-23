@@ -31,7 +31,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] Web search tool (DuckDuckGo)
 - [x] URL fetch tool (extract text from web pages)
 - [x] **Forcing search/browser tool** - Allow users to force the agent to use search or browser tools for specific queries
-- [ ] Image generation tool (Gemini 3 Pro Image or Imagen)
+- [x] Image generation tool (Gemini 3 Pro Image Preview)
 - [ ] Text-to-speech tool
 - [ ] Code execution sandbox
 - [x] File upload and processing (images, PDFs, text files)
@@ -114,6 +114,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Add database connectivity check** - Verify database is accessible at startup with clear error message
 
 ### 🔵 Frontend Performance & UX
+- [ ] **Allow switching conversations without interrupting active requests/SSE** - Currently, switching to a different conversation kills any active streaming requests or SSE connections. Allow multiple conversations to have active requests simultaneously, so users can switch between conversations without losing progress on ongoing responses.
 - [ ] **iPad Safari keyboard bar gap** - When focusing input on iPad with external keyboard, the system keyboard accessory bar pushes content up, revealing a gap below the app. CSS cannot paint outside the viewport iOS reveals. Need to investigate workarounds.
 - [ ] **Replace native browser dialogs** - Replace `alert()`, `confirm()`, and `prompt()` with custom modal components for better UX
 - [x] **Frontend bundle optimization** - Migrated to Vite, bundles marked.js and highlight.js from npm
