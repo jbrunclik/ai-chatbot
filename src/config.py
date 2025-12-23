@@ -47,6 +47,39 @@ class Config:
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
+    # Cost tracking
+    COST_CURRENCY: str = os.getenv("COST_CURRENCY", "CZK").upper()  # Default to CZK
+
+    # Gemini 3 pricing (per million tokens) - as of Dec 2025
+    # These should be updated when Google changes pricing
+    MODEL_PRICING = {
+        "gemini-3-flash-preview": {
+            "input": 0.075,  # $0.075 per million input tokens
+            "output": 0.30,  # $0.30 per million output tokens
+        },
+        "gemini-3-pro-preview": {
+            "input": 1.25,  # $1.25 per million input tokens
+            "output": 5.00,  # $5.00 per million output tokens
+        },
+        "gemini-3-pro-image-preview": {
+            "input": 2.00,  # $2.00 per million input tokens (text prompts)
+            "output": 12.00,  # $12.00 per million output tokens (images + thinking)
+        },
+        "gemini-2.0-flash": {
+            "input": 0.075,  # Used for title generation
+            "output": 0.30,
+        },
+    }
+
+    # Currency conversion rates (USD to other currencies)
+    # These should be updated regularly - see TODO.md for automated update task
+    CURRENCY_RATES = {
+        "USD": 1.0,
+        "CZK": 23.0,  # Approximate rate - should be updated regularly
+        "EUR": 0.92,
+        "GBP": 0.79,
+    }
+
     @classmethod
     def is_development(cls) -> bool:
         """Check if running in development mode."""

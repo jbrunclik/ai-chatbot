@@ -4,6 +4,7 @@ import { DELETE_ICON, LOGOUT_ICON } from '../utils/icons';
 import { useStore } from '../state/store';
 import { DEFAULT_CONVERSATION_TITLE } from '../types/api';
 import type { Conversation } from '../types/api';
+import { costs } from '../api/client';
 
 /**
  * Render the conversations list in the sidebar
@@ -81,10 +82,50 @@ export function renderUserInfo(): void {
       ${avatarHtml}
       <span class="user-name">${escapeHtml(name)}</span>
     </div>
-    <button id="logout-btn" class="btn-logout" title="Logout">
-      ${LOGOUT_ICON}
-    </button>
+    <div class="user-actions">
+      <button id="monthly-cost" class="btn-monthly-cost" title="Click to view cost history">
+        <span class="cost-label">This month:</span>
+        <span class="cost-value">—</span>
+      </button>
+      <button id="logout-btn" class="btn-logout" title="Logout">
+        ${LOGOUT_ICON}
+      </button>
+    </div>
   `;
+
+  // Fetch monthly cost after rendering
+  const now = new Date();
+  costs.getMonthlyCost(now.getFullYear(), now.getMonth() + 1)
+    .then(monthlyCost => {
+      const costValueEl = container.querySelector('.cost-value');
+      if (costValueEl) {
+        costValueEl.textContent = monthlyCost.formatted;
+      }
+      const costBtn = container.querySelector('#monthly-cost');
+      if (costBtn) {
+        costBtn.setAttribute('title', `Click to view cost history`);
+      }
+    })
+    .catch((error) => {
+      // Ignore errors - cost display is optional, but log for debugging
+      console.warn('Failed to fetch monthly cost:', error);
+    });
+}
+
+/**
+ * Update the monthly cost display in the sidebar
+ */
+export async function updateMonthlyCost(): Promise<void> {
+  const costValueEl = document.querySelector('#user-info .cost-value');
+  if (!costValueEl) return;
+
+  try {
+    const now = new Date();
+    const monthlyCost = await costs.getMonthlyCost(now.getFullYear(), now.getMonth() + 1);
+    costValueEl.textContent = monthlyCost.formatted;
+  } catch {
+    // Ignore errors - cost display is optional
+  }
 }
 
 /**

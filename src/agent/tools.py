@@ -2,6 +2,7 @@
 
 import base64
 import json
+from typing import Any
 
 import html2text
 import httpx
@@ -213,6 +214,21 @@ def generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
         )
         logger.debug("Image generation API call completed")
 
+        # Extract usage metadata for cost tracking
+        usage_metadata_dict: dict[str, Any] | None = None
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = response.usage_metadata
+            usage_metadata_dict = {
+                "prompt_token_count": getattr(usage, "prompt_token_count", 0) or 0,
+                "candidates_token_count": getattr(usage, "candidates_token_count", 0) or 0,
+                "thoughts_token_count": getattr(usage, "thoughts_token_count", 0) or 0,
+                "total_token_count": getattr(usage, "total_token_count", 0) or 0,
+            }
+            logger.debug(
+                "Image generation usage metadata extracted",
+                extra=usage_metadata_dict,
+            )
+
         # Extract image from response
         if not response.candidates:
             logger.warning("No candidates in image generation response")
@@ -243,16 +259,19 @@ def generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
                         "aspect_ratio": aspect_ratio,
                     },
                 )
-                return json.dumps(
-                    {
-                        "prompt": prompt,
-                        "aspect_ratio": aspect_ratio,
-                        "image": {
-                            "data": image_base64,
-                            "mime_type": image_data.mime_type or "image/png",
-                        },
-                    }
-                )
+                result = {
+                    "prompt": prompt,
+                    "aspect_ratio": aspect_ratio,
+                    "image": {
+                        "data": image_base64,
+                        "mime_type": image_data.mime_type or "image/png",
+                    },
+                }
+                # Include usage_metadata for cost tracking
+                if usage_metadata_dict:
+                    result["usage_metadata"] = usage_metadata_dict
+
+                return json.dumps(result)
 
         logger.warning("No image data found in response parts")
         return json.dumps({"error": "No image data found in response"})

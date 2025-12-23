@@ -52,7 +52,8 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Rate limiting
 - [x] Request logging and monitoring
 - [x] Database migrations system (yoyo-migrations)
-- [ ] **Cost tracking** - Track API costs per user and per conversation
+- [x] **Cost tracking** - Track API costs per user and per conversation
+- [ ] **Automated currency rate updates** - Implement regular updates of currency exchange rates (CURRENCY_RATES in config.py) from an external API (e.g., exchangerate-api.com, fixer.io) with fallback to manual updates. Consider caching rates and updating daily/weekly.
 - [ ] Backup and restore
 - [ ] Docker deployment option
 
