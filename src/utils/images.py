@@ -121,7 +121,8 @@ def extract_generated_images_from_tool_results(
     """Extract generated images from tool results.
 
     Scans tool results for generate_image outputs and extracts the image data
-    to be stored as files.
+    to be stored as files. The image data is stored in `_full_result.image` to
+    avoid sending large base64 data back to the LLM.
 
     Args:
         tool_results: List of tool result dicts with 'type' and 'content' keys
@@ -151,12 +152,16 @@ def extract_generated_images_from_tool_results(
         if not isinstance(tool_result, dict):
             continue
 
-        # Check if this is a generate_image result with required fields
-        if "image" not in tool_result or "prompt" not in tool_result:
+        # Check if this is a generate_image result
+        # Image data is in _full_result.image (kept separate to avoid sending to LLM)
+        if "_full_result" not in tool_result:
             continue
+        full_result = tool_result.get("_full_result", {})
+        if "image" not in full_result:
+            continue
+        image_data = full_result["image"]
 
         # Validate image data structure
-        image_data = tool_result["image"]
         if not isinstance(image_data, dict):
             continue
 

@@ -259,12 +259,23 @@ def generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
                         "aspect_ratio": aspect_ratio,
                     },
                 )
+                # Return TWO things:
+                # 1. A summary for the LLM (no image data - to avoid sending 500KB back to the model)
+                # 2. The full image data stored in a special field that gets extracted server-side
+                #
+                # The LLM only sees the summary, which confirms the image was generated.
+                # The server extracts _full_result for storage and display.
                 result = {
+                    "success": True,
                     "prompt": prompt,
                     "aspect_ratio": aspect_ratio,
-                    "image": {
-                        "data": image_base64,
-                        "mime_type": image_data.mime_type or "image/png",
+                    "message": "Image generated successfully. The image will be displayed to the user.",
+                    # This field is extracted server-side and NOT sent to the LLM
+                    "_full_result": {
+                        "image": {
+                            "data": image_base64,
+                            "mime_type": image_data.mime_type or "image/png",
+                        },
                     },
                 }
                 # Include usage_metadata for cost tracking

@@ -222,7 +222,8 @@ def calculate_image_generation_cost_from_tool_results(
             continue
 
         # Check if this is a generate_image result with usage_metadata
-        if isinstance(content_data, dict) and "image" in content_data:
+        # The image data is in _full_result.image (not sent to LLM), but usage_metadata is at top level
+        if isinstance(content_data, dict) and "_full_result" in content_data:
             usage_metadata = content_data.get("usage_metadata")
             if usage_metadata:
                 total_cost += calculate_image_generation_cost(usage_metadata)
