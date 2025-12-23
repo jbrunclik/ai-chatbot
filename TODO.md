@@ -50,7 +50,7 @@ This file tracks planned features, improvements, and technical debt.
 ## Phase 5 - Production Hardening
 - [ ] Comprehensive test suite
 - [ ] Rate limiting
-- [ ] Request logging and monitoring
+- [x] Request logging and monitoring
 - [x] Database migrations system (yoyo-migrations)
 - [ ] **Cost tracking** - Track API costs per user and per conversation
 - [ ] Backup and restore
@@ -91,7 +91,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Add OpenAPI/Swagger documentation
 - [ ] **Store files and thumbnails outside DB** - Move file data and thumbnails to object storage (S3, MinIO, etc.) for better scalability and performance
 - [x] **Split JavaScript into modules** - Migrated to Vite + TypeScript with modular components in `web/src/`
-- [ ] **Add structured logging** - Replace print statements with proper logging framework (Python logging module). Currently `images.py:69` uses `print()`.
+- [x] **Add structured logging** - Replace print statements with proper logging framework (Python logging module). Currently `images.py:69` uses `print()`.
 - [ ] **Error handling standardization** - Create consistent error response format across all API endpoints
 - [ ] **Frontend error boundaries** - Add error handling for failed API calls with retry logic. Also wrap `response.json()` in try-catch.
 - [x] **Remove inline onclick handlers** - Migrated to event delegation in TypeScript components
@@ -130,8 +130,8 @@ This file tracks planned features, improvements, and technical debt.
 ### ⚙️ Configuration & Operations
 - [ ] **Environment variable validation** - Validate all required env vars at startup with clear error messages
 - [ ] **Add health check endpoint** - `/health` endpoint for monitoring and load balancer checks
-- [ ] **Add request/response logging middleware** - Log all API requests and responses (with sensitive data redaction)
-- [ ] **Add request ID tracking** - Include request IDs in logs and error responses for easier debugging
+- [x] **Add request/response logging middleware** - Log all API requests and responses (with sensitive data redaction)
+- [x] **Add request ID tracking** - Include request IDs in logs and error responses for easier debugging
 - [ ] **Add API response compression** - Enable gzip compression for API responses
 - [ ] **Remove unused dependencies** - Audit and remove any unused npm/Python dependencies
 - [ ] **Optimize image processing** - Consider async/background processing for thumbnail generation on large images

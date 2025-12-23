@@ -44,6 +44,9 @@ class Config:
     GUNICORN_TIMEOUT: int = int(os.getenv("GUNICORN_TIMEOUT", "300"))  # 5 minutes default
     SSE_KEEPALIVE_INTERVAL: int = int(os.getenv("SSE_KEEPALIVE_INTERVAL", "15"))  # seconds
 
+    # Logging
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
     @classmethod
     def is_development(cls) -> bool:
         """Check if running in development mode."""

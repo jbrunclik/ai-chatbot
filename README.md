@@ -176,6 +176,57 @@ location / {
 
 The app uses SSE keepalive heartbeats (configurable via `SSE_KEEPALIVE_INTERVAL`) to prevent proxy timeouts during LLM "thinking" phases. For very long operations, increase both `GUNICORN_TIMEOUT` and nginx timeouts.
 
+### Log Rotation and Disk Space
+
+The systemd service file includes log rate limiting to prevent disk space issues, especially when using `LOG_LEVEL=DEBUG`. The default settings allow ~333 log messages per second.
+
+**Service-level limits** (configured in `ai-chatbot.service`):
+- `LogRateLimitIntervalSec=30`: Time window for rate limiting
+- `LogRateLimitBurst=10000`: Maximum messages per interval
+
+**Global journald limits** (optional, requires root):
+
+To configure system-wide journald limits, create or edit `/etc/systemd/journald.conf.d/ai-chatbot.conf`:
+
+```ini
+[Journal]
+# Maximum disk space for journal (default: 10% of filesystem)
+SystemMaxUse=1G
+
+# Maximum disk space for persistent journal
+SystemKeepFree=500M
+
+# Maximum age of journal entries (older entries are deleted)
+MaxRetentionSec=7day
+
+# Maximum number of journal files to keep
+MaxFiles=10
+```
+
+After modifying journald configuration:
+```bash
+sudo systemctl restart systemd-journald
+```
+
+**Viewing log sizes:**
+```bash
+# Check journal disk usage
+journalctl --user --disk-usage
+
+# Check service-specific log size
+journalctl --user -u ai-chatbot --disk-usage
+
+# Clean old logs (keeps last 7 days)
+journalctl --user --vacuum-time=7d
+```
+
+**Monitoring log volume:**
+When running with `LOG_LEVEL=DEBUG`, monitor disk usage regularly:
+```bash
+# Watch journal size
+watch -n 60 'journalctl --user --disk-usage'
+```
+
 ## Project Structure
 
 ```

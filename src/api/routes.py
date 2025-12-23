@@ -19,6 +19,9 @@ from src.config import Config
 from src.db.models import db
 from src.utils.files import validate_files
 from src.utils.images import extract_generated_images_from_tool_results, process_image_files
+from src.utils.logging import get_logger, log_payload_snippet
+
+logger = get_logger(__name__)
 
 api = Blueprint("api", __name__, url_prefix="/api")
 auth = Blueprint("auth", __name__, url_prefix="/auth")
@@ -32,25 +35,33 @@ auth = Blueprint("auth", __name__, url_prefix="/auth")
 @auth.route("/google", methods=["POST"])
 def google_auth() -> tuple[dict[str, Any], int]:
     """Authenticate with Google ID token from Sign In with Google."""
+    logger.info("Google authentication request")
     if Config.is_development():
+        logger.warning("Authentication attempted in development mode")
         return {"error": "Authentication disabled in local mode"}, 400
 
     data = request.get_json() or {}
     id_token = data.get("credential")
 
     if not id_token:
+        logger.warning("Google auth request missing credential")
         return {"error": "Missing credential"}, 400
 
     try:
+        logger.debug("Verifying Google ID token")
         user_info = verify_google_id_token(id_token)
+        email = user_info.get("email", "")
+        logger.debug("Google token verified", extra={"email": email})
     except GoogleAuthError as e:
+        logger.warning("Google token verification failed", extra={"error": str(e)})
         return {"error": str(e)}, 401
 
-    email = user_info.get("email", "")
     if not is_email_allowed(email):
+        logger.warning("Email not in whitelist", extra={"email": email})
         return {"error": "Email not authorized"}, 403
 
     # Create or get user
+    logger.debug("Getting or creating user", extra={"email": email})
     user = db.get_or_create_user(
         email=email,
         name=user_info.get("name", email),
@@ -59,6 +70,7 @@ def google_auth() -> tuple[dict[str, Any], int]:
 
     # Generate JWT token
     token = create_token(user)
+    logger.info("Google authentication successful", extra={"user_id": user.id, "email": email})
 
     return {
         "token": token,
@@ -105,7 +117,12 @@ def list_conversations() -> dict[str, list[dict[str, str]]]:
     """List all conversations for the current user."""
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
+    logger.debug("Listing conversations", extra={"user_id": user.id})
     conversations = db.list_conversations(user.id)
+    logger.info(
+        "Conversations listed",
+        extra={"user_id": user.id, "count": len(conversations)},
+    )
     return {
         "conversations": [
             {
@@ -128,11 +145,25 @@ def create_conversation() -> tuple[dict[str, str], int]:
     assert user is not None  # Guaranteed by @require_auth
     data = request.get_json() or {}
     model = data.get("model", Config.DEFAULT_MODEL)
+    log_payload_snippet(logger, data)
 
     if model not in Config.MODELS:
+        logger.warning(
+            "Invalid model requested",
+            extra={
+                "user_id": user.id,
+                "model": model,
+                "available_models": list(Config.MODELS.keys()),
+            },
+        )
         return {"error": f"Invalid model. Choose from: {list(Config.MODELS.keys())}"}, 400
 
+    logger.debug("Creating conversation", extra={"user_id": user.id, "model": model})
     conv = db.create_conversation(user.id, model=model)
+    logger.info(
+        "Conversation created",
+        extra={"user_id": user.id, "conversation_id": conv.id, "model": model},
+    )
     return {
         "id": conv.id,
         "title": conv.title,
@@ -153,11 +184,24 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
+    logger.debug("Getting conversation", extra={"user_id": user.id, "conversation_id": conv_id})
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
+        logger.warning(
+            "Conversation not found",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Conversation not found"}, 404
 
     messages = db.get_messages(conv_id)
+    logger.info(
+        "Conversation retrieved",
+        extra={
+            "user_id": user.id,
+            "conversation_id": conv_id,
+            "message_count": len(messages),
+        },
+    )
 
     # Optimize file data: only include metadata, not thumbnails or full file data
     # Thumbnails are fetched on-demand via /api/messages/<message_id>/files/<file_index>/thumbnail
@@ -207,13 +251,27 @@ def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
     data = request.get_json() or {}
     title = data.get("title")
     model = data.get("model")
+    log_payload_snippet(logger, data)
 
     if model and model not in Config.MODELS:
+        logger.warning(
+            "Invalid model in update request",
+            extra={"user_id": user.id, "conversation_id": conv_id, "model": model},
+        )
         return {"error": f"Invalid model. Choose from: {list(Config.MODELS.keys())}"}, 400
 
+    logger.debug(
+        "Updating conversation",
+        extra={"user_id": user.id, "conversation_id": conv_id, "title": title, "model": model},
+    )
     if not db.update_conversation(conv_id, user.id, title=title, model=model):
+        logger.warning(
+            "Conversation not found for update",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Conversation not found"}, 404
 
+    logger.info("Conversation updated", extra={"user_id": user.id, "conversation_id": conv_id})
     return {"status": "updated"}, 200
 
 
@@ -224,9 +282,15 @@ def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
 
+    logger.debug("Deleting conversation", extra={"user_id": user.id, "conversation_id": conv_id})
     if not db.delete_conversation(conv_id, user.id):
+        logger.warning(
+            "Conversation not found for deletion",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Conversation not found"}, 404
 
+    logger.info("Conversation deleted", extra={"user_id": user.id, "conversation_id": conv_id})
     return {"status": "deleted"}, 200
 
 
@@ -247,31 +311,80 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
+    logger.info("Batch chat request", extra={"user_id": user.id, "conversation_id": conv_id})
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
+        logger.warning(
+            "Conversation not found for chat",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Conversation not found"}, 404
 
     data = request.get_json() or {}
     message_text = data.get("message", "").strip()
     files = data.get("files", [])
     force_tools = data.get("force_tools", [])
+    log_payload_snippet(
+        logger,
+        {"message_length": len(message_text), "file_count": len(files), "force_tools": force_tools},
+    )
 
     if not message_text and not files:
+        logger.warning(
+            "Chat request missing message and files",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Message or files required"}, 400
 
     # Validate files if present
     if files:
+        logger.debug(
+            "Validating files",
+            extra={"user_id": user.id, "conversation_id": conv_id, "file_count": len(files)},
+        )
         is_valid, error = validate_files(files)
         if not is_valid:
+            logger.warning(
+                "File validation failed",
+                extra={
+                    "user_id": user.id,
+                    "conversation_id": conv_id,
+                    "error": error,
+                    "file_count": len(files),
+                },
+            )
             return {"error": error}, 400
         # Generate thumbnails for images
+        logger.debug(
+            "Processing image files for thumbnails",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         files = process_image_files(files)
 
     # Save user message with separate content and files
+    logger.debug(
+        "Saving user message",
+        extra={
+            "user_id": user.id,
+            "conversation_id": conv_id,
+            "message_length": len(message_text),
+            "file_count": len(files) if files else 0,
+        },
+    )
     db.add_message(conv_id, "user", message_text, files=files if files else None)
 
     # Get previous agent state
     previous_state = db.get_agent_state(conv_id)
+    logger.debug(
+        "Starting chat agent",
+        extra={
+            "user_id": user.id,
+            "conversation_id": conv_id,
+            "model": conv.model,
+            "has_previous_state": previous_state is not None,
+            "force_tools": force_tools,
+        },
+    )
 
     # Create agent and get response
     try:
@@ -279,14 +392,43 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         raw_response, new_state, tool_results = agent.chat_with_state(
             message_text, files, previous_state, force_tools=force_tools
         )
+        logger.debug(
+            "Chat agent completed",
+            extra={
+                "user_id": user.id,
+                "conversation_id": conv_id,
+                "response_length": len(raw_response),
+                "tool_results_count": len(tool_results),
+            },
+        )
 
         # Extract metadata from response
         clean_response, metadata = extract_metadata_from_response(raw_response)
         sources, generated_images_meta = extract_metadata_fields(metadata)
+        logger.debug(
+            "Extracted metadata",
+            extra={
+                "user_id": user.id,
+                "conversation_id": conv_id,
+                "sources_count": len(sources) if sources else 0,
+                "generated_images_count": len(generated_images_meta)
+                if generated_images_meta
+                else 0,
+            },
+        )
 
         # Extract generated image files from tool results
         # Note: tool_results are returned separately since they're not persisted in state
         gen_image_files = extract_generated_images_from_tool_results(tool_results)
+        if gen_image_files:
+            logger.info(
+                "Generated images extracted",
+                extra={
+                    "user_id": user.id,
+                    "conversation_id": conv_id,
+                    "image_count": len(gen_image_files),
+                },
+            )
 
         # Ensure we have at least some content or files to save
         # If response is empty but we have generated images, use a default message
@@ -294,6 +436,10 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             clean_response = "I've generated the image for you."
 
         # Save response and state (with clean content, files, and metadata)
+        logger.debug(
+            "Saving assistant message and state",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         assistant_msg = db.add_message(
             conv_id,
             "assistant",
@@ -303,18 +449,43 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             generated_images=generated_images_meta if generated_images_meta else None,
         )
         db.save_agent_state(conv_id, new_state)
+        logger.info(
+            "Batch chat completed",
+            extra={
+                "user_id": user.id,
+                "conversation_id": conv_id,
+                "message_id": assistant_msg.id,
+                "response_length": len(clean_response),
+            },
+        )
     except Exception as e:
         # Log the error and return a proper error response
         import traceback
 
-        print(f"Error in chat_batch: {e}")
-        print(traceback.format_exc())
+        logger.error(
+            "Error in chat_batch",
+            extra={
+                "user_id": user.id,
+                "conversation_id": conv_id,
+                "error": str(e),
+                "traceback": traceback.format_exc(),
+            },
+            exc_info=True,
+        )
         return {"error": f"Failed to generate response: {str(e)}"}, 500
 
     # Auto-generate title from first message if still default
     if conv.title == "New Conversation":
+        logger.debug(
+            "Auto-generating conversation title",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         new_title = generate_title(message_text, clean_response)
         db.update_conversation(conv_id, user.id, title=new_title)
+        logger.debug(
+            "Conversation title generated",
+            extra={"user_id": user.id, "conversation_id": conv_id, "title": new_title},
+        )
 
     # Build response
     response_data = build_chat_response(
@@ -339,27 +510,66 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
+    logger.info("Stream chat request", extra={"user_id": user.id, "conversation_id": conv_id})
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
+        logger.warning(
+            "Conversation not found for stream chat",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Conversation not found"}, 404
 
     data = request.get_json() or {}
     message_text = data.get("message", "").strip()
     files = data.get("files", [])
     force_tools = data.get("force_tools", [])
+    log_payload_snippet(
+        logger,
+        {"message_length": len(message_text), "file_count": len(files), "force_tools": force_tools},
+    )
 
     if not message_text and not files:
+        logger.warning(
+            "Stream chat request missing message and files",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         return {"error": "Message or files required"}, 400
 
     # Validate files if present
     if files:
+        logger.debug(
+            "Validating files for stream",
+            extra={"user_id": user.id, "conversation_id": conv_id, "file_count": len(files)},
+        )
         is_valid, error = validate_files(files)
         if not is_valid:
+            logger.warning(
+                "File validation failed in stream",
+                extra={
+                    "user_id": user.id,
+                    "conversation_id": conv_id,
+                    "error": error,
+                    "file_count": len(files),
+                },
+            )
             return {"error": error}, 400
         # Generate thumbnails for images
+        logger.debug(
+            "Processing image files for thumbnails in stream",
+            extra={"user_id": user.id, "conversation_id": conv_id},
+        )
         files = process_image_files(files)
 
     # Save user message with separate content and files
+    logger.debug(
+        "Saving user message for stream",
+        extra={
+            "user_id": user.id,
+            "conversation_id": conv_id,
+            "message_length": len(message_text),
+            "file_count": len(files) if files else 0,
+        },
+    )
     db.add_message(conv_id, "user", message_text, files=files if files else None)
 
     # Get conversation history for context
@@ -367,6 +577,16 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     history = [
         {"role": m.role, "content": m.content, "files": m.files} for m in messages[:-1]
     ]  # Exclude the just-added message
+    logger.debug(
+        "Starting stream chat agent",
+        extra={
+            "user_id": user.id,
+            "conversation_id": conv_id,
+            "model": conv.model,
+            "history_length": len(history),
+            "force_tools": force_tools,
+        },
+    )
 
     def generate() -> Generator[str, None, None]:
         """Generator that streams tokens as SSE events with keepalive support.
@@ -387,12 +607,31 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         def stream_tokens() -> None:
             """Background thread that streams tokens into the queue."""
             try:
+                logger.debug(
+                    "Stream thread started", extra={"user_id": user.id, "conversation_id": conv_id}
+                )
+                token_count = 0
                 for item in agent.stream_chat(
                     message_text, files, history, force_tools=force_tools
                 ):
+                    if isinstance(item, str):
+                        token_count += 1
                     token_queue.put(item)
+                logger.debug(
+                    "Stream thread completed",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "token_count": token_count,
+                    },
+                )
                 token_queue.put(None)  # Signal completion
             except Exception as e:
+                logger.error(
+                    "Stream thread error",
+                    extra={"user_id": user.id, "conversation_id": conv_id, "error": str(e)},
+                    exc_info=True,
+                )
                 token_queue.put(e)  # Signal error
 
         # Start streaming in background thread
@@ -431,11 +670,35 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
 
             # Extract metadata fields
             sources, generated_images_meta = extract_metadata_fields(metadata)
+            logger.debug(
+                "Extracted metadata from stream",
+                extra={
+                    "user_id": user.id,
+                    "conversation_id": conv_id,
+                    "sources_count": len(sources) if sources else 0,
+                    "generated_images_count": len(generated_images_meta)
+                    if generated_images_meta
+                    else 0,
+                },
+            )
 
             # Extract generated image files from tool results captured during streaming
             gen_image_files = extract_generated_images_from_tool_results(tool_results)
+            if gen_image_files:
+                logger.info(
+                    "Generated images extracted from stream",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "image_count": len(gen_image_files),
+                    },
+                )
 
             # Save complete response to DB
+            logger.debug(
+                "Saving assistant message from stream",
+                extra={"user_id": user.id, "conversation_id": conv_id},
+            )
             assistant_msg = db.add_message(
                 conv_id,
                 "assistant",
@@ -447,17 +710,44 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
 
             # Auto-generate title from first message if still default
             if conv.title == "New Conversation":
+                logger.debug(
+                    "Auto-generating conversation title from stream",
+                    extra={"user_id": user.id, "conversation_id": conv_id},
+                )
                 new_title = generate_title(message_text, clean_content)
                 db.update_conversation(conv_id, user.id, title=new_title)
+                logger.debug(
+                    "Conversation title generated from stream",
+                    extra={"user_id": user.id, "conversation_id": conv_id, "title": new_title},
+                )
 
             # Build done event
             done_data = build_stream_done_event(
                 assistant_msg, gen_image_files, sources, generated_images_meta
             )
 
+            logger.info(
+                "Stream chat completed",
+                extra={
+                    "user_id": user.id,
+                    "conversation_id": conv_id,
+                    "message_id": assistant_msg.id,
+                    "response_length": len(clean_content),
+                },
+            )
+
             yield f"data: {json.dumps(done_data)}\n\n"
 
         except Exception as e:
+            logger.error(
+                "Error in stream generator",
+                extra={
+                    "user_id": user.id,
+                    "conversation_id": conv_id,
+                    "error": str(e),
+                },
+                exc_info=True,
+            )
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
     return Response(
@@ -538,19 +828,31 @@ def get_message_thumbnail(
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
+    logger.debug(
+        "Getting thumbnail",
+        extra={"user_id": user.id, "message_id": message_id, "file_index": file_index},
+    )
 
     # Get the message
     message = db.get_message_by_id(message_id)
     if not message:
+        logger.warning("Message not found for thumbnail", extra={"message_id": message_id})
         return {"error": "Message not found"}, 404
 
     # Verify user owns the conversation
     conv = db.get_conversation(message.conversation_id, user.id)
     if not conv:
+        logger.warning(
+            "Unauthorized thumbnail access", extra={"user_id": user.id, "message_id": message_id}
+        )
         return {"error": "Not authorized"}, 403
 
     # Get the file
     if not message.files or file_index >= len(message.files):
+        logger.warning(
+            "File not found for thumbnail",
+            extra={"message_id": message_id, "file_index": file_index},
+        )
         return {"error": "File not found"}, 404
 
     file = message.files[file_index]
@@ -558,6 +860,15 @@ def get_message_thumbnail(
 
     # Check if it's an image
     if not file_type.startswith("image/"):
+        logger.warning(
+            "Non-image file requested as thumbnail",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+                "file_type": file_type,
+            },
+        )
         return {"error": "File is not an image"}, 400
 
     # Prefer thumbnail, fall back to full image if thumbnail doesn't exist
@@ -565,6 +876,16 @@ def get_message_thumbnail(
     if thumbnail_data:
         try:
             binary_data = base64.b64decode(thumbnail_data)
+            logger.debug(
+                "Returning thumbnail",
+                extra={
+                    "user_id": user.id,
+                    "message_id": message_id,
+                    "conversation_id": message.conversation_id,
+                    "file_index": file_index,
+                    "size": len(binary_data),
+                },
+            )
             return Response(
                 binary_data,
                 mimetype=file_type,
@@ -572,17 +893,45 @@ def get_message_thumbnail(
                     "Cache-Control": "private, max-age=31536000",  # Cache for 1 year
                 },
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "Failed to decode thumbnail, falling back to full image",
+                extra={
+                    "user_id": user.id,
+                    "message_id": message_id,
+                    "conversation_id": message.conversation_id,
+                    "error": str(e),
+                },
+            )
             # Fall through to full image
             pass
 
     # Fall back to full image if no thumbnail
     file_data = file.get("data", "")
     if not file_data:
+        logger.warning(
+            "No image data found for thumbnail",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+                "file_index": file_index,
+            },
+        )
         return {"error": "Image data not found"}, 404
 
     try:
         binary_data = base64.b64decode(file_data)
+        logger.debug(
+            "Returning full image as thumbnail fallback",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+                "file_index": file_index,
+                "size": len(binary_data),
+            },
+        )
         return Response(
             binary_data,
             mimetype=file_type,
@@ -590,7 +939,8 @@ def get_message_thumbnail(
                 "Cache-Control": "private, max-age=31536000",
             },
         )
-    except Exception:
+    except Exception as e:
+        logger.error("Failed to decode image data", extra={"error": str(e)}, exc_info=True)
         return {"error": "Invalid image data"}, 500
 
 
@@ -603,19 +953,43 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
     """
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
+    logger.debug(
+        "Getting file",
+        extra={"user_id": user.id, "message_id": message_id, "file_index": file_index},
+    )
 
     # Get the message
     message = db.get_message_by_id(message_id)
     if not message:
+        logger.warning(
+            "Message not found for file", extra={"user_id": user.id, "message_id": message_id}
+        )
         return {"error": "Message not found"}, 404
 
     # Verify user owns the conversation
     conv = db.get_conversation(message.conversation_id, user.id)
     if not conv:
+        logger.warning(
+            "Unauthorized file access",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+            },
+        )
         return {"error": "Not authorized"}, 403
 
     # Get the file
     if not message.files or file_index >= len(message.files):
+        logger.warning(
+            "File not found",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+                "file_index": file_index,
+            },
+        )
         return {"error": "File not found"}, 404
 
     file = message.files[file_index]
@@ -625,6 +999,17 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
     # Decode base64 and return as binary
     try:
         binary_data = base64.b64decode(file_data)
+        logger.debug(
+            "Returning file",
+            extra={
+                "user_id": user.id,
+                "message_id": message_id,
+                "conversation_id": message.conversation_id,
+                "file_index": file_index,
+                "file_type": file_type,
+                "size": len(binary_data),
+            },
+        )
         return Response(
             binary_data,
             mimetype=file_type,
@@ -632,5 +1017,6 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
                 "Cache-Control": "private, max-age=31536000",  # Cache for 1 year
             },
         )
-    except Exception:
+    except Exception as e:
+        logger.error("Failed to decode file data", extra={"error": str(e)}, exc_info=True)
         return {"error": "Invalid file data"}, 500

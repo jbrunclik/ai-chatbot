@@ -59,6 +59,9 @@ from langgraph.prebuilt import ToolNode
 
 from src.agent.tools import TOOLS
 from src.config import Config
+from src.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 BASE_SYSTEM_PROMPT = """You are a helpful, harmless, and honest AI assistant.
 
@@ -358,7 +361,26 @@ def should_continue(state: AgentState) -> Literal["tools", "end"]:
 def chat_node(state: AgentState, model: ChatGoogleGenerativeAI) -> dict[str, list[BaseMessage]]:
     """Process messages and generate a response."""
     messages = state["messages"]
+    message_count = len(messages)
+    logger.debug(
+        "Invoking LLM",
+        extra={
+            "message_count": message_count,
+            "model": model.model_name if hasattr(model, "model_name") else "unknown",
+        },
+    )
     response = model.invoke(messages)
+
+    # Log tool calls if present
+    if isinstance(response, AIMessage) and response.tool_calls:
+        tool_names = [tc.get("name", "unknown") for tc in response.tool_calls]
+        logger.info(
+            "LLM requested tool calls",
+            extra={"tool_calls": tool_names, "count": len(response.tool_calls)},
+        )
+    else:
+        logger.debug("LLM response received", extra={"has_content": bool(response.content)})
+
     return {"messages": [response]}
 
 
@@ -399,6 +421,7 @@ class ChatAgent:
     def __init__(self, model_name: str = Config.DEFAULT_MODEL, with_tools: bool = True) -> None:
         self.model_name = model_name
         self.with_tools = with_tools
+        logger.debug("Creating ChatAgent", extra={"model": model_name, "with_tools": with_tools})
         self.graph = create_chat_graph(model_name, with_tools=with_tools).compile()
 
     def _build_message_content(
@@ -656,6 +679,8 @@ class ChatAgent:
         )
 
         if previous_state and "messages" in previous_state:
+            history_count = len(previous_state["messages"])
+            logger.debug("Restoring agent state", extra={"history_message_count": history_count})
             for msg_data in previous_state["messages"]:
                 if msg_data["type"] == "human":
                     messages.append(HumanMessage(content=msg_data["content"]))
@@ -667,6 +692,17 @@ class ChatAgent:
         # Add the current user message (with multimodal support)
         content = self._build_message_content(text, files)
         messages.append(HumanMessage(content=content))
+        logger.debug(
+            "Starting chat_with_state",
+            extra={
+                "model": self.model_name,
+                "message_length": len(text),
+                "has_files": bool(files),
+                "file_count": len(files) if files else 0,
+                "force_tools": force_tools,
+                "total_messages": len(messages),
+            },
+        )
 
         # Run the graph
         result = self.graph.invoke(cast(Any, {"messages": messages}))
@@ -700,6 +736,9 @@ class ChatAgent:
                         "content": msg.content,
                     }
                 )
+
+        if tool_results:
+            logger.info("Tool results captured", extra={"tool_result_count": len(tool_results)})
 
         # Serialize state for persistence
         # NOTE: We exclude ToolMessages from persisted state because:
@@ -735,6 +774,7 @@ def generate_title(user_message: str, assistant_response: str) -> str:
     Returns:
         A short, descriptive title (max ~50 chars)
     """
+    logger.debug("Generating conversation title")
     # Use Flash model for fast, cheap title generation
     model = ChatGoogleGenerativeAI(
         model="gemini-2.0-flash",
@@ -763,7 +803,10 @@ Title:"""
         # Truncate if too long
         if len(title) > 60:
             title = title[:57] + "..."
-        return title or user_message[:50]
-    except Exception:
+        final_title = title or user_message[:50]
+        logger.debug("Title generated", extra={"title": final_title})
+        return final_title
+    except Exception as e:
         # Fallback to truncated message on any error
+        logger.warning("Title generation failed, using fallback", extra={"error": str(e)})
         return user_message[:50] + ("..." if len(user_message) > 50 else "")
