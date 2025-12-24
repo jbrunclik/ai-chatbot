@@ -57,7 +57,7 @@ class Database:
         self._init_db()
 
     @contextmanager
-    def _get_conn(self) -> Generator[sqlite3.Connection, None, None]:
+    def _get_conn(self) -> Generator[sqlite3.Connection]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
@@ -85,33 +85,40 @@ class Database:
     def get_or_create_user(self, email: str, name: str, picture: str | None = None) -> User:
         logger.debug("Getting or creating user", extra={"email": email})
         with self._get_conn() as conn:
-            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-
-            if row:
-                logger.debug("User found", extra={"user_id": row["id"], "email": email})
-                return User(
-                    id=row["id"],
-                    email=row["email"],
-                    name=row["name"],
-                    picture=row["picture"],
-                    created_at=datetime.fromisoformat(row["created_at"]),
-                )
-
+            # Use INSERT OR IGNORE to handle race conditions when multiple
+            # concurrent requests try to create the same user
             user_id = str(uuid.uuid4())
             now = datetime.now()
-            conn.execute(
-                "INSERT INTO users (id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?)",
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO users (id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?)",
                 (user_id, email, name, picture, now.isoformat()),
             )
             conn.commit()
-            logger.info("User created", extra={"user_id": user_id, "email": email})
 
+            # Check if we created a new user or if one already existed
+            if cursor.rowcount > 0:
+                logger.info("User created", extra={"user_id": user_id, "email": email})
+                return User(
+                    id=user_id,
+                    email=email,
+                    name=name,
+                    picture=picture,
+                    created_at=now,
+                )
+
+            # User already existed, fetch it
+            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            if not row:
+                # This should never happen - if INSERT OR IGNORE didn't insert,
+                # the user must exist. But handle it defensively.
+                raise RuntimeError(f"User with email {email} should exist but was not found")
+            logger.debug("User found", extra={"user_id": row["id"], "email": email})
             return User(
-                id=user_id,
-                email=email,
-                name=name,
-                picture=picture,
-                created_at=now,
+                id=row["id"],
+                email=row["email"],
+                name=row["name"],
+                picture=row["picture"],
+                created_at=datetime.fromisoformat(row["created_at"]),
             )
 
     def get_user_by_id(self, user_id: str) -> User | None:

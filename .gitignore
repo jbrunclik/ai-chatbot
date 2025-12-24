@@ -41,6 +41,9 @@ static/assets/
 .pytest_cache/
 .coverage
 htmlcov/
+test-results/
+web/playwright-report/
+web/test-results/
 
 # OS
 .DS_Store

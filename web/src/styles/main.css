@@ -437,6 +437,9 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* Prevent title from overlapping menu button on narrow screens */
+    max-width: calc(100% - 120px);
+    pointer-events: none;
 }
 
 /* Messages Area */
