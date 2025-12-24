@@ -1,0 +1,233 @@
+"""Shared pytest fixtures for AI Chatbot tests."""
+
+import os
+import tempfile
+from collections.abc import Generator
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+from flask import Flask
+from flask.testing import FlaskClient
+
+if TYPE_CHECKING:
+    from src.db.models import Conversation, Database, User
+
+# Set test environment variables before importing app modules
+os.environ["FLASK_ENV"] = "testing"
+os.environ["GEMINI_API_KEY"] = "test-api-key"
+os.environ["GOOGLE_CLIENT_ID"] = "test-client-id"
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
+os.environ["ALLOWED_EMAILS"] = "test@example.com,allowed@example.com"
+
+
+# -----------------------------------------------------------------------------
+# Database fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def temp_db_dir() -> Generator[Path, None, None]:
+    """Create a temporary directory for test databases."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+@pytest.fixture
+def test_db_path(temp_db_dir: Path, request: pytest.FixtureRequest) -> Path:
+    """Create unique database path for each test."""
+    # Use test name to create unique DB file
+    test_name = request.node.name.replace("[", "_").replace("]", "_").replace("/", "_")
+    return temp_db_dir / f"{test_name}.db"
+
+
+@pytest.fixture
+def test_database(test_db_path: Path) -> Generator["Database", None, None]:
+    """Create isolated test database for each test."""
+    from src.db.models import Database
+
+    db = Database(db_path=test_db_path)
+    yield db
+    # Cleanup happens automatically when temp dir is removed
+
+
+# -----------------------------------------------------------------------------
+# Flask app fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def app(test_database: "Database") -> Generator[Flask, None, None]:
+    """Create Flask test application with isolated database.
+
+    Uses test_database fixture to ensure same db instance is shared
+    between app routes and test fixtures like test_user.
+    """
+    with patch("src.db.models.db", test_database):
+        with patch("src.auth.jwt_auth.db", test_database):
+            with patch("src.api.routes.db", test_database):
+                from src.app import create_app
+
+                flask_app = create_app()
+                flask_app.config["TESTING"] = True
+                yield flask_app
+
+
+@pytest.fixture
+def client(app: Flask) -> FlaskClient:
+    """Create Flask test client."""
+    return app.test_client()
+
+
+# -----------------------------------------------------------------------------
+# User and auth fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def test_user(test_database: "Database") -> "User":
+    """Create test user in database."""
+    return test_database.get_or_create_user(
+        email="test@example.com",
+        name="Test User",
+        picture="https://example.com/picture.jpg",
+    )
+
+
+@pytest.fixture
+def auth_token(test_user: "User") -> str:
+    """Generate valid JWT token for test user."""
+    from src.auth.jwt_auth import create_token
+
+    return create_token(test_user)
+
+
+@pytest.fixture
+def auth_headers(auth_token: str) -> dict[str, str]:
+    """Auth headers for authenticated requests."""
+    return {"Authorization": f"Bearer {auth_token}"}
+
+
+# -----------------------------------------------------------------------------
+# Conversation fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def test_conversation(test_database: "Database", test_user: "User") -> "Conversation":
+    """Create test conversation."""
+    return test_database.create_conversation(
+        user_id=test_user.id,
+        title="Test Conversation",
+        model="gemini-3-flash-preview",
+    )
+
+
+# -----------------------------------------------------------------------------
+# Mock fixtures for external services
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mock_gemini_llm() -> Generator[MagicMock, None, None]:
+    """Mock ChatGoogleGenerativeAI to avoid real API calls."""
+    with patch("src.agent.chat_agent.ChatGoogleGenerativeAI") as mock:
+        mock_instance = MagicMock()
+        mock_instance.invoke.return_value = MagicMock(
+            content="Test response from LLM",
+            tool_calls=[],
+            usage_metadata={"input_tokens": 100, "output_tokens": 50},
+        )
+        mock.return_value = mock_instance
+        yield mock
+
+
+@pytest.fixture
+def mock_genai_client() -> Generator[MagicMock, None, None]:
+    """Mock genai.Client for image generation."""
+    with patch("src.agent.tools.genai.Client") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_ddgs() -> Generator[MagicMock, None, None]:
+    """Mock DuckDuckGo search."""
+    with patch("src.agent.tools.DDGS") as mock:
+        mock_instance = MagicMock()
+        mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+        mock_instance.__exit__ = MagicMock(return_value=False)
+        mock_instance.text.return_value = [
+            {
+                "title": "Test Result",
+                "href": "https://example.com",
+                "body": "Test snippet",
+            }
+        ]
+        mock.return_value = mock_instance
+        yield mock
+
+
+@pytest.fixture
+def mock_httpx() -> Generator[MagicMock, None, None]:
+    """Mock httpx for URL fetching."""
+    with patch("src.agent.tools.httpx.Client") as mock:
+        mock_instance = MagicMock()
+        mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+        mock_instance.__exit__ = MagicMock(return_value=False)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "<html><body><p>Test content</p></body></html>"
+        mock_response.headers = {"content-type": "text/html"}
+        mock_response.raise_for_status = MagicMock()
+        mock_instance.get.return_value = mock_response
+        mock.return_value = mock_instance
+        yield mock
+
+
+@pytest.fixture
+def mock_google_tokeninfo() -> Generator[MagicMock, None, None]:
+    """Mock Google tokeninfo endpoint."""
+    with patch("src.auth.google_auth.requests.get") as mock:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "aud": "test-client-id",
+            "email": "test@example.com",
+            "name": "Test User",
+            "picture": "https://example.com/pic.jpg",
+            "email_verified": "true",
+        }
+        mock.return_value = mock_response
+        yield mock
+
+
+# -----------------------------------------------------------------------------
+# Image fixtures
+# -----------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sample_png_base64() -> str:
+    """Create a simple test PNG image."""
+    from tests.fixtures.images import create_test_png
+
+    return create_test_png(100, 100, "red")
+
+
+@pytest.fixture
+def large_png_base64() -> str:
+    """Create a large test PNG image (1000x1000)."""
+    from tests.fixtures.images import create_test_png
+
+    return create_test_png(1000, 1000, "blue")
+
+
+@pytest.fixture
+def sample_file(sample_png_base64: str) -> dict[str, Any]:
+    """Sample file attachment."""
+    return {
+        "name": "test.png",
+        "type": "image/png",
+        "data": sample_png_base64,
+    }

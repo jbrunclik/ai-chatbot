@@ -77,13 +77,16 @@ class Database:
         logger.debug("Initializing database", extra={"db_path": str(self.db_path)})
         backend = get_backend(f"sqlite:///{self.db_path}")
         migrations = read_migrations(str(MIGRATIONS_DIR))
-        with backend.lock():
-            migrations_to_apply = backend.to_apply(migrations)
-            if migrations_to_apply:
-                logger.info(
-                    "Applying database migrations", extra={"count": len(migrations_to_apply)}
-                )
-            backend.apply_migrations(migrations_to_apply)
+        try:
+            with backend.lock():
+                migrations_to_apply = backend.to_apply(migrations)
+                if migrations_to_apply:
+                    logger.info(
+                        "Applying database migrations", extra={"count": len(migrations_to_apply)}
+                    )
+                backend.apply_migrations(migrations_to_apply)
+        finally:
+            backend.connection.close()
 
     # User operations
     def get_or_create_user(self, email: str, name: str, picture: str | None = None) -> User:
