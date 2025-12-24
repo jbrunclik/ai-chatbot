@@ -29,7 +29,7 @@ ai-chatbot/
 │   │   ├── chat_agent.py         # LangGraph agent with Gemini
 │   │   └── tools.py              # Agent tools (fetch_url, web_search, generate_image)
 │   ├── db/
-│   │   └── models.py             # SQLite: User, Conversation, Message, AgentState
+│   │   └── models.py             # SQLite: User, Conversation, Message
 │   └── utils/
 │       └── images.py             # Thumbnail generation (Pillow)
 ├── web/                          # Vite + TypeScript frontend
@@ -242,12 +242,12 @@ The metadata block supports both sources and generated_images:
 Supported: `1:1` (default), `16:9`, `9:16`, `4:3`, `3:4`, `3:2`, `2:3`
 
 ### Tool result handling
-Tool results (including generated images) are **not persisted** in the agent state. This is intentional:
+Tool results (including generated images) are returned from both `chat_batch()` and `stream_chat()` methods but are **not persisted** to the database. This is intentional:
 1. **Prevents state bloat**: Generated images are large base64 blobs that would grow the state rapidly
 2. **Ensures fresh tool calls**: If tool results were persisted, the LLM might skip calling `generate_image` for follow-up requests, thinking the tool was already called
-3. **Conversation context is sufficient**: The human/AI message history provides enough context for multi-turn conversations
+3. **Conversation context is sufficient**: The human/AI message history stored in the `messages` table provides enough context for multi-turn conversations
 
-The `chat_with_state()` method returns tool results as a separate third value: `(response_text, new_state, tool_results)`. The batch and streaming endpoints extract images from `tool_results` before discarding them.
+The `chat_batch()` method returns `(response_text, tool_results, usage_info)`. The batch and streaming endpoints extract images from `tool_results` for storage, then discard the tool results themselves.
 
 ## Voice Input
 

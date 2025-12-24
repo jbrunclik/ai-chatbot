@@ -383,15 +383,18 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
     )
     db.add_message(conv_id, "user", message_text, files=files if files else None)
 
-    # Get previous agent state
-    previous_state = db.get_agent_state(conv_id)
+    # Get conversation history (excluding files from previous messages to save tokens)
+    messages = db.get_messages(conv_id)
+    history = [
+        {"role": m.role, "content": m.content} for m in messages[:-1]
+    ]  # Exclude the just-added message
     logger.debug(
         "Starting chat agent",
         extra={
             "user_id": user.id,
             "conversation_id": conv_id,
             "model": conv.model,
-            "has_previous_state": previous_state is not None,
+            "history_length": len(history),
             "force_tools": force_tools,
         },
     )
@@ -403,13 +406,13 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         set_current_request_id(request_id)
 
         agent = ChatAgent(model_name=conv.model)
-        raw_response, new_state, tool_results, usage_info = agent.chat_with_state(
-            message_text, files, previous_state, force_tools=force_tools
+        raw_response, tool_results, usage_info = agent.chat_batch(
+            message_text, files, history, force_tools=force_tools
         )
 
         # Get the FULL tool results (with _full_result) captured before stripping
         # This is needed for extracting generated images, as the tool_results from
-        # chat_with_state have already been stripped
+        # chat_batch have already been stripped
         full_tool_results = get_full_tool_results(request_id)
         set_current_request_id(None)  # Clean up
 
@@ -460,9 +463,9 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         if not clean_response and gen_image_files:
             clean_response = "I've generated the image for you."
 
-        # Save response and state (with clean content, files, and metadata)
+        # Save assistant message (with clean content, files, and metadata)
         logger.debug(
-            "Saving assistant message and state",
+            "Saving assistant message",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
         assistant_msg = db.add_message(
@@ -473,7 +476,6 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             sources=sources if sources else None,
             generated_images=generated_images_meta if generated_images_meta else None,
         )
-        db.save_agent_state(conv_id, new_state)
 
         # Calculate and save cost (use full_tool_results for image generation cost)
         calculate_and_save_message_cost(

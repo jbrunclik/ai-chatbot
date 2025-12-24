@@ -332,51 +332,6 @@ class TestMessageOperations:
         assert msg is None
 
 
-class TestAgentStateOperations:
-    """Tests for AgentState persistence."""
-
-    def test_save_and_get_state(
-        self, test_database: "Database", test_conversation: "Conversation"
-    ) -> None:
-        """Should save and retrieve agent state."""
-        state = {
-            "messages": [
-                {"type": "human", "content": "Hello"},
-                {"type": "ai", "content": "Hi there"},
-            ]
-        }
-
-        test_database.save_agent_state(test_conversation.id, state)
-        retrieved = test_database.get_agent_state(test_conversation.id)
-
-        assert retrieved == state
-
-    def test_update_state(
-        self, test_database: "Database", test_conversation: "Conversation"
-    ) -> None:
-        """Should update existing state (upsert)."""
-        state1 = {"messages": [{"type": "human", "content": "Hello"}]}
-        state2 = {
-            "messages": [
-                {"type": "human", "content": "Hello"},
-                {"type": "ai", "content": "Hi"},
-            ]
-        }
-
-        test_database.save_agent_state(test_conversation.id, state1)
-        test_database.save_agent_state(test_conversation.id, state2)
-
-        retrieved = test_database.get_agent_state(test_conversation.id)
-        assert len(retrieved["messages"]) == 2
-
-    def test_get_nonexistent_state(
-        self, test_database: "Database", test_conversation: "Conversation"
-    ) -> None:
-        """Should return None for conversation without saved state."""
-        state = test_database.get_agent_state(test_conversation.id)
-        assert state is None
-
-
 class TestCostOperations:
     """Tests for cost tracking operations."""
 

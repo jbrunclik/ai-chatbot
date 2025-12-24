@@ -51,13 +51,6 @@ class Message:
     has_cost: bool = False  # Whether cost tracking data exists for this message
 
 
-@dataclass
-class AgentState:
-    conversation_id: str
-    state_json: str
-    updated_at: datetime
-
-
 class Database:
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or Config.DATABASE_PATH
@@ -234,8 +227,6 @@ class Database:
             # to preserve accurate cost reporting (the money was already spent)
             # Delete messages
             conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
-            # Delete agent state
-            conn.execute("DELETE FROM agent_states WHERE conversation_id = ?", (conv_id,))
             # Delete conversation
             cursor = conn.execute(
                 "DELETE FROM conversations WHERE id = ? AND user_id = ?",
@@ -368,40 +359,6 @@ class Database:
                 if row["generated_images"]
                 else None,
             )
-
-    # Agent state operations
-    def save_agent_state(self, conversation_id: str, state: dict[str, Any]) -> None:
-        state_json = json.dumps(state)
-        state_size = len(state_json)
-        now = datetime.now().isoformat()
-        logger.debug(
-            "Saving agent state",
-            extra={"conversation_id": conversation_id, "state_size": state_size},
-        )
-
-        with self._get_conn() as conn:
-            conn.execute(
-                """INSERT INTO agent_states (conversation_id, state_json, updated_at)
-                   VALUES (?, ?, ?)
-                   ON CONFLICT(conversation_id) DO UPDATE SET
-                   state_json = excluded.state_json,
-                   updated_at = excluded.updated_at""",
-                (conversation_id, state_json, now),
-            )
-            conn.commit()
-        logger.debug("Agent state saved", extra={"conversation_id": conversation_id})
-
-    def get_agent_state(self, conversation_id: str) -> dict[str, Any] | None:
-        with self._get_conn() as conn:
-            row = conn.execute(
-                "SELECT state_json FROM agent_states WHERE conversation_id = ?",
-                (conversation_id,),
-            ).fetchone()
-
-            if not row:
-                return None
-
-            return json.loads(row["state_json"])  # type: ignore[no-any-return]
 
     # Cost tracking operations
     def save_message_cost(

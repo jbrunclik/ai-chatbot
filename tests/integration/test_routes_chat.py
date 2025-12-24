@@ -23,9 +23,8 @@ class TestChatBatch:
         """Should return assistant response."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
             mock_agent = MagicMock()
-            mock_agent.chat_with_state.return_value = (
+            mock_agent.chat_batch.return_value = (
                 "Hello! How can I help?",  # response
-                {"messages": []},  # new_state
                 [],  # tool_results
                 {"input_tokens": 100, "output_tokens": 50},  # usage_info
             )
@@ -69,9 +68,8 @@ class TestChatBatch:
         """Should save user and assistant messages."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
             mock_agent = MagicMock()
-            mock_agent.chat_with_state.return_value = (
+            mock_agent.chat_batch.return_value = (
                 "Response text",
-                {"messages": []},
                 [],
                 {"input_tokens": 100, "output_tokens": 50},
             )
@@ -104,9 +102,8 @@ class TestChatBatch:
 <!-- METADATA:
 {"sources": [{"title": "Test Source", "url": "https://example.com"}]}
 -->"""
-            mock_agent.chat_with_state.return_value = (
+            mock_agent.chat_batch.return_value = (
                 response_with_metadata,
-                {"messages": []},
                 [],
                 {"input_tokens": 150, "output_tokens": 100},
             )
@@ -154,9 +151,8 @@ class TestChatBatch:
         """Should pass force_tools to agent."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
             mock_agent = MagicMock()
-            mock_agent.chat_with_state.return_value = (
+            mock_agent.chat_batch.return_value = (
                 "Response",
-                {"messages": []},
                 [],
                 {"input_tokens": 100, "output_tokens": 50},
             )
@@ -169,7 +165,7 @@ class TestChatBatch:
             )
 
             # Verify force_tools was passed
-            call_kwargs = mock_agent.chat_with_state.call_args.kwargs
+            call_kwargs = mock_agent.chat_batch.call_args.kwargs
             assert call_kwargs.get("force_tools") == ["web_search"]
 
 
@@ -293,9 +289,8 @@ class TestChatWithFiles:
         """Should handle file attachments in batch mode."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
             mock_agent = MagicMock()
-            mock_agent.chat_with_state.return_value = (
+            mock_agent.chat_batch.return_value = (
                 "I see your image",
-                {"messages": []},
                 [],
                 {"input_tokens": 200, "output_tokens": 50},
             )
@@ -322,9 +317,8 @@ class TestChatWithFiles:
         """Should accept files without text message."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
             mock_agent = MagicMock()
-            mock_agent.chat_with_state.return_value = (
+            mock_agent.chat_batch.return_value = (
                 "This is an image of...",
-                {"messages": []},
                 [],
                 {"input_tokens": 200, "output_tokens": 50},
             )
