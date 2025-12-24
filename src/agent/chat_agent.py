@@ -28,7 +28,7 @@ Flow:
 
 Components:
     - AgentState: TypedDict holding conversation messages
-    - ChatAgent: Main class with chat() and chat_with_state() methods
+    - ChatAgent: Main class with chat_batch() and stream_chat() methods
     - SYSTEM_PROMPT: Instructions for when to use web tools
     - extract_text_content(): Helper to handle Gemini's varied response formats:
         * str: Plain text responses (most common)
@@ -705,37 +705,98 @@ class ChatAgent:
 
         return messages
 
-    def chat(
+    def chat_batch(
         self,
-        user_message: str,
-        history: list[dict[str, str]] | None = None,
-    ) -> str:
+        text: str,
+        files: list[dict[str, Any]] | None = None,
+        history: list[dict[str, Any]] | None = None,
+        force_tools: list[str] | None = None,
+    ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
         """
-        Send a message and get a response.
+        Send a message and get a response (non-streaming).
 
         Args:
-            user_message: The user's message
-            history: Optional list of previous messages with 'role' and 'content' keys
+            text: The user's message text
+            files: Optional list of file attachments
+            history: Optional list of previous messages with 'role', 'content', and 'files' keys
+            force_tools: Optional list of tool names that must be used
 
         Returns:
-            The assistant's response text
+            Tuple of (response_text, tool_results, usage_info)
         """
-        messages = self._build_messages(user_message, history)
+        messages = self._build_messages(text, files, history, force_tools=force_tools)
+        logger.debug(
+            "Starting chat_batch",
+            extra={
+                "model": self.model_name,
+                "message_length": len(text),
+                "has_files": bool(files),
+                "file_count": len(files) if files else 0,
+                "force_tools": force_tools,
+                "total_messages": len(messages),
+            },
+        )
 
         # Run the graph
         result = self.graph.invoke(cast(Any, {"messages": messages}))
 
-        # Extract the assistant's response (last AI message without tool calls)
+        # Extract response (last AI message with actual content)
         response_text = ""
         for msg in reversed(result["messages"]):
             if isinstance(msg, AIMessage):
-                # Skip messages that only have tool calls
-                if msg.tool_calls and not extract_text_content(msg.content):
+                text_content = extract_text_content(msg.content)
+                if msg.tool_calls and not text_content:
                     continue
-                response_text = extract_text_content(msg.content)
-                break
+                text_content = clean_tool_call_json(text_content)
+                if text_content:
+                    response_text = text_content
+                    break
 
-        return response_text
+        # Extract tool results
+        tool_results: list[dict[str, Any]] = []
+        for msg in result["messages"]:
+            if isinstance(msg, ToolMessage):
+                tool_results.append({"type": "tool", "content": msg.content})
+
+        if tool_results:
+            logger.info("Tool results captured", extra={"tool_result_count": len(tool_results)})
+
+        # Aggregate usage metadata from all AIMessages
+        total_input_tokens = 0
+        total_output_tokens = 0
+        for msg in result["messages"]:
+            if isinstance(msg, AIMessage):
+                if hasattr(msg, "usage_metadata") and msg.usage_metadata:
+                    usage = msg.usage_metadata
+                    if isinstance(usage, dict):
+                        input_tokens = usage.get("input_tokens", 0)
+                        output_tokens = usage.get("output_tokens", 0)
+                        if input_tokens > 0 or output_tokens > 0:
+                            total_input_tokens += input_tokens
+                            total_output_tokens += output_tokens
+                            logger.debug(
+                                "Found usage metadata in AIMessage",
+                                extra={
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                },
+                            )
+
+        usage_info = {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+        }
+
+        if total_input_tokens > 0 or total_output_tokens > 0:
+            logger.debug(
+                "Usage metadata aggregated",
+                extra={
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                },
+            )
+
+        return response_text, tool_results, usage_info
 
     def stream_chat(
         self,
@@ -884,160 +945,6 @@ class ChatAgent:
 
         # Final yield: (content, metadata, tool_results, usage_info) for server processing
         yield (clean_content, metadata, tool_results, usage_info)
-
-    def chat_with_state(
-        self,
-        text: str,
-        files: list[dict[str, Any]] | None = None,
-        previous_state: dict[str, Any] | None = None,
-        force_tools: list[str] | None = None,
-    ) -> tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-        """
-        Chat with persistent state for multi-turn agent workflows.
-
-        Args:
-            text: The user's message text
-            files: Optional list of file attachments
-            previous_state: Optional previous agent state
-            force_tools: Optional list of tool names that must be used
-
-        Returns:
-            Tuple of (response text, new state for persistence, tool results, usage info)
-            - response text: The assistant's response
-            - new state: State for persistence
-            - tool results: Tool execution results (not persisted)
-            - usage_info: Dict with 'input_tokens' and 'output_tokens'
-        """
-        # Restore previous messages or start fresh
-        messages: list[BaseMessage] = []
-
-        # Always add system prompt (with tool instructions if tools are enabled)
-        messages.append(
-            SystemMessage(content=get_system_prompt(self.with_tools, force_tools=force_tools))
-        )
-
-        if previous_state and "messages" in previous_state:
-            history_count = len(previous_state["messages"])
-            logger.debug("Restoring agent state", extra={"history_message_count": history_count})
-            for msg_data in previous_state["messages"]:
-                if msg_data["type"] == "human":
-                    messages.append(HumanMessage(content=msg_data["content"]))
-                elif msg_data["type"] == "ai":
-                    messages.append(AIMessage(content=msg_data["content"]))
-                # Skip tool messages - they are no longer persisted and shouldn't
-                # be restored (prevents issues with large binary data and tool reuse)
-
-        # Add the current user message (with multimodal support)
-        content = self._build_message_content(text, files)
-        messages.append(HumanMessage(content=content))
-        logger.debug(
-            "Starting chat_with_state",
-            extra={
-                "model": self.model_name,
-                "message_length": len(text),
-                "has_files": bool(files),
-                "file_count": len(files) if files else 0,
-                "force_tools": force_tools,
-                "total_messages": len(messages),
-            },
-        )
-
-        # Run the graph
-        result = self.graph.invoke(cast(Any, {"messages": messages}))
-
-        # Extract response (last AI message with actual content)
-        # We need to find the final AI response that has text content.
-        # This might be after tool calls, so we iterate in reverse and take the
-        # first AIMessage that has extractable text content (even if it also has tool_calls).
-        response_text = ""
-        for msg in reversed(result["messages"]):
-            if isinstance(msg, AIMessage):
-                # Extract text content first to see if there's any text
-                text = extract_text_content(msg.content)
-                # Skip if this message only has tool calls and no text content
-                if msg.tool_calls and not text:
-                    continue
-                # Clean any tool call JSON that leaked into response
-                text = clean_tool_call_json(text)
-                if text:
-                    response_text = text
-                    break
-
-        # Extract tool results from the raw result (before state serialization)
-        # These are returned separately for server-side processing (e.g., extracting images)
-        tool_results: list[dict[str, Any]] = []
-        for msg in result["messages"]:
-            if isinstance(msg, ToolMessage):
-                tool_results.append(
-                    {
-                        "type": "tool",
-                        "content": msg.content,
-                    }
-                )
-
-        if tool_results:
-            logger.info("Tool results captured", extra={"tool_result_count": len(tool_results)})
-
-        # Aggregate usage metadata from all AIMessages
-        # Note: usage_metadata is a direct attribute on AIMessage, not in response_metadata
-        total_input_tokens = 0
-        total_output_tokens = 0
-        for msg in result["messages"]:
-            if isinstance(msg, AIMessage):
-                # Check usage_metadata as a direct attribute (this is where LangChain puts it)
-                if hasattr(msg, "usage_metadata") and msg.usage_metadata:
-                    usage = msg.usage_metadata
-                    if isinstance(usage, dict):
-                        # Gemini provides input_tokens and output_tokens directly
-                        input_tokens = usage.get("input_tokens", 0)
-                        output_tokens = usage.get("output_tokens", 0)
-
-                        if input_tokens > 0 or output_tokens > 0:
-                            total_input_tokens += input_tokens
-                            total_output_tokens += output_tokens
-                            logger.debug(
-                                "Found usage metadata in AIMessage",
-                                extra={
-                                    "input_tokens": input_tokens,
-                                    "output_tokens": output_tokens,
-                                },
-                            )
-
-        usage_info = {
-            "input_tokens": total_input_tokens,
-            "output_tokens": total_output_tokens,
-        }
-
-        if total_input_tokens > 0 or total_output_tokens > 0:
-            logger.debug(
-                "Usage metadata aggregated",
-                extra={
-                    "input_tokens": total_input_tokens,
-                    "output_tokens": total_output_tokens,
-                },
-            )
-
-        # Serialize state for persistence
-        # NOTE: We exclude ToolMessages from persisted state because:
-        # 1. Tool results (especially generate_image) can contain large binary data
-        # 2. Preserving tool results may cause the LLM to skip calling tools again
-        # 3. For multi-turn conversations, the LLM has the conversation context from
-        #    human/ai messages which is sufficient for continuity
-        new_state: dict[str, Any] = {"messages": []}
-        for m in result["messages"]:
-            if isinstance(m, HumanMessage):
-                new_state["messages"].append(
-                    {"type": "human", "content": extract_text_content(m.content)}
-                )
-            elif isinstance(m, AIMessage):
-                content = extract_text_content(m.content)
-                # Clean any tool call JSON that leaked into the response
-                content = clean_tool_call_json(content)
-                if content:  # Only store if there's actual content after cleaning
-                    new_state["messages"].append({"type": "ai", "content": content})
-            # Skip ToolMessages - they contain execution details that shouldn't persist
-
-        return response_text, new_state, tool_results, usage_info
 
 
 def generate_title(user_message: str, assistant_response: str) -> str:
