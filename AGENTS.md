@@ -413,7 +413,7 @@ The app tracks API costs per conversation and per user per calendar month, accou
 ### Key files
 - [costs.py](src/utils/costs.py) - Cost calculation and currency conversion utilities
 - [config.py](src/config.py) - Model pricing (`MODEL_PRICING`) and currency rates (`CURRENCY_RATES`)
-- [models.py](src/db/models.py) - `save_message_cost()`, `get_message_cost()`, `get_conversation_cost()`, `get_user_monthly_cost()`, `get_user_cost_history()`, `delete_conversation()` (includes message_costs cleanup)
+- [models.py](src/db/models.py) - `save_message_cost()`, `get_message_cost()`, `get_conversation_cost()`, `get_user_monthly_cost()`, `get_user_cost_history()` (note: `delete_conversation()` intentionally preserves cost data for accurate reporting)
 - [chat_agent.py](src/agent/chat_agent.py) - Token usage extraction from `usage_metadata` (memory efficient - only tracks numbers, not message objects)
 - [tools.py](src/agent/tools.py) - Image generation tool includes `usage_metadata` in response
 - [api/utils.py](src/api/utils.py) - `calculate_and_save_message_cost()` centralizes cost calculation and saving for both batch and streaming, `calculate_image_generation_cost_from_tool_results()` extracts image costs from tool results

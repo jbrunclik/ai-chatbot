@@ -516,13 +516,13 @@ class TestCostOperations:
             for h in history
         )
 
-    def test_delete_conversation_deletes_costs(
+    def test_delete_conversation_preserves_costs(
         self,
         test_database: "Database",
         test_user: "User",
         test_conversation: "Conversation",
     ) -> None:
-        """Deleting conversation should also delete cost data."""
+        """Deleting conversation should preserve cost data for accurate reporting."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R1")
         test_database.save_message_cost(
             msg.id, test_conversation.id, test_user.id,
@@ -531,6 +531,9 @@ class TestCostOperations:
 
         test_database.delete_conversation(test_conversation.id, test_user.id)
 
-        # Cost should be gone
+        # Cost should still exist (money was already spent)
         cost = test_database.get_message_cost(msg.id)
-        assert cost is None
+        assert cost is not None
+        assert cost["cost_usd"] == 0.05
+        assert cost["input_tokens"] == 100
+        assert cost["output_tokens"] == 50
