@@ -230,8 +230,8 @@ class Database:
 
     def delete_conversation(self, conv_id: str, user_id: str) -> bool:
         with self._get_conn() as conn:
-            # Delete message costs first (foreign key constraint)
-            conn.execute("DELETE FROM message_costs WHERE conversation_id = ?", (conv_id,))
+            # Note: We intentionally keep message_costs even after conversation deletion
+            # to preserve accurate cost reporting (the money was already spent)
             # Delete messages
             conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
             # Delete agent state
