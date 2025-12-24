@@ -1,0 +1,291 @@
+"""Unit tests for helper functions in src/agent/chat_agent.py."""
+
+import pytest
+
+from src.agent.chat_agent import (
+    clean_tool_call_json,
+    extract_metadata_from_response,
+    extract_text_content,
+    get_force_tools_prompt,
+    get_system_prompt,
+    strip_full_result_from_tool_content,
+)
+
+
+class TestExtractTextContent:
+    """Tests for extract_text_content function."""
+
+    def test_string_content(self) -> None:
+        """String content should pass through unchanged."""
+        assert extract_text_content("Hello world") == "Hello world"
+        assert extract_text_content("") == ""
+
+    def test_dict_with_type_text(self) -> None:
+        """Dict with type='text' should extract text value."""
+        content = {"type": "text", "text": "Hello from dict"}
+        assert extract_text_content(content) == "Hello from dict"
+
+    def test_dict_with_text_key_only(self) -> None:
+        """Dict with only 'text' key (no type) should extract it."""
+        content = {"text": "Just text key"}
+        assert extract_text_content(content) == "Just text key"
+
+    def test_dict_without_text_key(self) -> None:
+        """Dict without text key should return empty string."""
+        content = {"type": "tool_use", "name": "web_search"}
+        assert extract_text_content(content) == ""
+
+    def test_list_of_text_parts(self) -> None:
+        """List of text parts should be concatenated."""
+        content = [
+            {"type": "text", "text": "Part 1"},
+            {"type": "text", "text": " Part 2"},
+        ]
+        assert extract_text_content(content) == "Part 1 Part 2"
+
+    def test_list_with_extras_skipped(self) -> None:
+        """Non-text parts in list should be skipped."""
+        content = [
+            {"type": "text", "text": "Hello"},
+            {"type": "extras", "signature": "abc"},
+            {"type": "tool_use", "name": "search"},
+        ]
+        assert extract_text_content(content) == "Hello"
+
+    def test_list_with_string_items(self) -> None:
+        """List with plain strings should concatenate them."""
+        content = ["Hello", " ", "World"]
+        assert extract_text_content(content) == "Hello World"
+
+    def test_empty_list(self) -> None:
+        """Empty list should return empty string."""
+        assert extract_text_content([]) == ""
+
+    def test_empty_dict(self) -> None:
+        """Empty dict should return empty string."""
+        assert extract_text_content({}) == ""
+
+    def test_mixed_list(self) -> None:
+        """List with mixed types should extract text from all."""
+        content = [
+            {"type": "text", "text": "First"},
+            "Second",
+            {"text": "Third"},
+        ]
+        assert extract_text_content(content) == "FirstSecondThird"
+
+
+class TestExtractMetadataFromResponse:
+    """Tests for extract_metadata_from_response function."""
+
+    def test_html_comment_format(self) -> None:
+        """Should extract metadata from HTML comment format."""
+        response = """Here is my response.
+
+<!-- METADATA:
+{"sources": [{"title": "Test", "url": "https://example.com"}]}
+-->"""
+        clean, metadata = extract_metadata_from_response(response)
+
+        assert clean == "Here is my response."
+        assert "sources" in metadata
+        assert len(metadata["sources"]) == 1
+        assert metadata["sources"][0]["title"] == "Test"
+
+    def test_plain_json_format(self) -> None:
+        """Should extract metadata from plain JSON at end."""
+        response = """Response text.
+
+{"sources": [{"title": "Test", "url": "https://example.com"}]}"""
+        clean, metadata = extract_metadata_from_response(response)
+
+        assert clean == "Response text."
+        assert "sources" in metadata
+
+    def test_no_metadata(self) -> None:
+        """Response without metadata should return empty dict."""
+        response = "Just plain text response."
+        clean, metadata = extract_metadata_from_response(response)
+
+        assert clean == "Just plain text response."
+        assert metadata == {}
+
+    def test_generated_images_metadata(self) -> None:
+        """Should extract generated_images metadata."""
+        response = """Image generated!
+
+<!-- METADATA:
+{"generated_images": [{"prompt": "A sunset over mountains"}]}
+-->"""
+        clean, metadata = extract_metadata_from_response(response)
+
+        assert "generated_images" in metadata
+        assert metadata["generated_images"][0]["prompt"] == "A sunset over mountains"
+
+    def test_both_sources_and_images(self) -> None:
+        """Should extract both sources and generated_images."""
+        response = """Here's what I found and created.
+
+<!-- METADATA:
+{"sources": [{"title": "Wiki", "url": "https://wiki.org"}], "generated_images": [{"prompt": "test"}]}
+-->"""
+        clean, metadata = extract_metadata_from_response(response)
+
+        assert "sources" in metadata
+        assert "generated_images" in metadata
+
+    def test_malformed_json_in_html_comment(self) -> None:
+        """Malformed JSON in HTML comment should result in empty metadata."""
+        response = """Response text.
+
+<!-- METADATA:
+{invalid json here}
+-->"""
+        clean, metadata = extract_metadata_from_response(response)
+
+        # Should fall through to plain JSON search (which also fails)
+        assert "Response text" in clean
+        assert metadata == {}
+
+    def test_strips_trailing_whitespace(self) -> None:
+        """Should strip trailing whitespace from cleaned content."""
+        response = """Response with trailing space
+
+<!-- METADATA:
+{"sources": []}
+-->"""
+        clean, metadata = extract_metadata_from_response(response)
+
+        assert not clean.endswith(" ")
+        assert clean == "Response with trailing space"
+
+
+class TestStripFullResultFromToolContent:
+    """Tests for strip_full_result_from_tool_content function."""
+
+    def test_strips_full_result_field(self) -> None:
+        """Should remove _full_result from JSON content."""
+        content = '{"success": true, "message": "Done", "_full_result": {"image": {"data": "base64..."}}}'
+        result = strip_full_result_from_tool_content(content)
+
+        import json
+
+        parsed = json.loads(result)
+        assert "_full_result" not in parsed
+        assert parsed["success"] is True
+        assert parsed["message"] == "Done"
+
+    def test_preserves_non_json_content(self) -> None:
+        """Non-JSON content should pass through unchanged."""
+        content = "Plain text result"
+        assert strip_full_result_from_tool_content(content) == content
+
+    def test_preserves_json_without_full_result(self) -> None:
+        """JSON without _full_result should pass through unchanged."""
+        content = '{"message": "Success", "data": "value"}'
+        result = strip_full_result_from_tool_content(content)
+        assert result == content
+
+    def test_handles_empty_string(self) -> None:
+        """Empty string should pass through."""
+        assert strip_full_result_from_tool_content("") == ""
+
+    def test_handles_json_array(self) -> None:
+        """JSON array should pass through unchanged."""
+        content = '[1, 2, 3]'
+        assert strip_full_result_from_tool_content(content) == content
+
+
+class TestCleanToolCallJson:
+    """Tests for clean_tool_call_json function."""
+
+    def test_removes_tool_call_json_string_input(self) -> None:
+        """Should remove action/action_input JSON blocks."""
+        response = 'Here is my answer.\n{"action": "generate_image", "action_input": "test prompt"}'
+        clean = clean_tool_call_json(response)
+        assert clean == "Here is my answer."
+
+    def test_removes_tool_call_json_object_input(self) -> None:
+        """Should remove action/action_input with object input."""
+        response = 'Answer.\n{"action": "generate_image", "action_input": {"prompt": "test"}}'
+        clean = clean_tool_call_json(response)
+        assert clean == "Answer."
+
+    def test_preserves_normal_text(self) -> None:
+        """Normal text without tool JSON should pass through."""
+        response = "Normal response without tool JSON"
+        assert clean_tool_call_json(response) == response
+
+    def test_preserves_other_json(self) -> None:
+        """Other JSON structures should be preserved."""
+        response = 'Here is some data: {"key": "value", "count": 42}'
+        assert clean_tool_call_json(response) == response
+
+    def test_handles_empty_string(self) -> None:
+        """Empty string should return empty string."""
+        assert clean_tool_call_json("") == ""
+
+
+class TestGetSystemPrompt:
+    """Tests for get_system_prompt function."""
+
+    def test_includes_tool_instructions_by_default(self) -> None:
+        """With tools enabled, prompt should include tool instructions."""
+        prompt = get_system_prompt(with_tools=True)
+        assert "web_search" in prompt
+        assert "generate_image" in prompt
+        assert "fetch_url" in prompt
+
+    def test_excludes_tool_instructions_when_disabled(self) -> None:
+        """With tools disabled, prompt should not include tool instructions."""
+        prompt = get_system_prompt(with_tools=False)
+        # Should still have base prompt
+        assert "helpful" in prompt.lower()
+        # But not tool-specific instructions
+        assert "METADATA:" not in prompt
+
+    def test_includes_force_tools_instruction(self) -> None:
+        """Should include force tools instruction when specified."""
+        prompt = get_system_prompt(with_tools=True, force_tools=["web_search"])
+        assert "MUST use the following tools" in prompt
+        assert "web_search" in prompt
+
+    def test_includes_multiple_force_tools(self) -> None:
+        """Should list all forced tools."""
+        prompt = get_system_prompt(
+            with_tools=True, force_tools=["web_search", "generate_image"]
+        )
+        assert "web_search" in prompt
+        assert "generate_image" in prompt
+
+    def test_includes_current_date(self) -> None:
+        """Prompt should include current date/time."""
+        prompt = get_system_prompt()
+        assert "Current date and time:" in prompt
+
+    def test_base_prompt_content(self) -> None:
+        """Prompt should include base instructions."""
+        prompt = get_system_prompt(with_tools=False)
+        assert "helpful" in prompt.lower()
+        assert "markdown" in prompt.lower()
+
+
+class TestGetForceToolsPrompt:
+    """Tests for get_force_tools_prompt function."""
+
+    def test_single_tool(self) -> None:
+        """Should format single tool correctly."""
+        prompt = get_force_tools_prompt(["web_search"])
+        assert "MUST use the following tools" in prompt
+        assert "- web_search" in prompt
+
+    def test_multiple_tools(self) -> None:
+        """Should format multiple tools correctly."""
+        prompt = get_force_tools_prompt(["web_search", "fetch_url"])
+        assert "- web_search" in prompt
+        assert "- fetch_url" in prompt
+
+    def test_empty_list(self) -> None:
+        """Empty list should still generate prompt structure."""
+        prompt = get_force_tools_prompt([])
+        assert "MUST use the following tools" in prompt

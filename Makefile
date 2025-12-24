@@ -1,4 +1,4 @@
-.PHONY: setup lint lint-fix run dev build test clean deploy
+.PHONY: help setup lint lint-fix run dev build test test-cov test-unit test-integration clean deploy
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -6,6 +6,25 @@ PIP := $(VENV)/bin/pip
 RUFF := $(VENV)/bin/ruff
 MYPY := $(VENV)/bin/mypy
 NPM := npm
+
+help:
+	@echo "AI Chatbot - Available targets:"
+	@echo ""
+	@echo "  setup            Create venv and install dependencies"
+	@echo "  dev              Run Flask + Vite dev servers concurrently"
+	@echo "  run              Run Flask server only"
+	@echo "  build            Production build (Vite)"
+	@echo ""
+	@echo "  lint             Run all linters (ruff, mypy, eslint)"
+	@echo "  lint-fix         Auto-fix linting issues"
+	@echo ""
+	@echo "  test             Run all tests"
+	@echo "  test-unit        Run unit tests only"
+	@echo "  test-integration Run integration tests only"
+	@echo "  test-cov         Run tests with coverage report"
+	@echo ""
+	@echo "  clean            Remove venv, caches, and build artifacts"
+	@echo "  deploy           Deploy to systemd (Hetzner)"
 
 setup:
 	python3 -m venv $(VENV)
@@ -42,10 +61,19 @@ run:
 test:
 	$(PYTHON) -m pytest tests/ -v
 
+test-cov:
+	$(PYTHON) -m pytest tests/ -v --cov=src --cov-report=html --cov-report=term
+
+test-unit:
+	$(PYTHON) -m pytest tests/unit/ -v
+
+test-integration:
+	$(PYTHON) -m pytest tests/integration/ -v
+
 clean:
 	rm -rf $(VENV)
-	rm -rf __pycache__ src/__pycache__ src/**/__pycache__
-	rm -rf .mypy_cache .ruff_cache
+	rm -rf __pycache__ src/__pycache__ src/**/__pycache__ tests/__pycache__ tests/**/__pycache__
+	rm -rf .mypy_cache .ruff_cache .pytest_cache .coverage htmlcov
 	rm -rf *.egg-info
 	rm -rf web/node_modules
 	rm -rf static/assets

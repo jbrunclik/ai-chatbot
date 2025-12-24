@@ -119,15 +119,37 @@ make run
 ## Commands
 
 ```bash
+make            # Show available targets
 make setup      # Create venv and install dependencies (Python + Node.js)
 make dev        # Run Flask + Vite dev servers concurrently (with HMR)
 make build      # Build frontend for production
 make run        # Run Flask server (production mode)
 make lint       # Run ruff, mypy, and ESLint
 make lint-fix   # Auto-fix linting issues
-make test       # Run tests
+make test       # Run all tests
+make test-unit  # Run unit tests only
+make test-integration  # Run integration tests only
+make test-cov   # Run tests with coverage report
 make deploy     # Deploy systemd service (Linux)
 ```
+
+## Testing
+
+The project includes a comprehensive backend test suite with 230 tests:
+
+```bash
+make test           # Run all tests
+make test-unit      # Run unit tests only (135 tests)
+make test-integration  # Run integration tests only (95 tests)
+make test-cov       # Run with coverage report (72% coverage)
+```
+
+Tests are organized in `tests/`:
+- `tests/unit/` - Unit tests for individual functions (costs, auth, tools, images)
+- `tests/integration/` - Integration tests for API routes and database operations
+- `tests/conftest.py` - Shared fixtures (isolated SQLite per test, mocked external services)
+
+All external services (Gemini API, Google Auth, DuckDuckGo) are mocked - tests run offline and fast.
 
 ## Deployment
 

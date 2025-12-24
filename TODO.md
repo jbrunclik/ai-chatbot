@@ -48,7 +48,8 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Voice conversation mode** - Full voice-based conversation with speech-to-text input and text-to-speech output
 
 ## Phase 5 - Production Hardening
-- [ ] Comprehensive test suite
+- [x] Backend test suite (pytest with unit and integration tests)
+- [ ] Frontend test suite (Vitest with component and e2e tests)
 - [ ] Rate limiting
 - [x] Request logging and monitoring
 - [x] Database migrations system (yoyo-migrations)
@@ -76,7 +77,8 @@ This file tracks planned features, improvements, and technical debt.
 
 ### 🔴 Critical / High Priority
 - [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
-- [ ] **Add comprehensive test suite** - No tests exist. Create `tests/` directory with unit, integration, and e2e tests for auth, API, agent, and frontend.
+- [x] **Add backend test suite** - Created `tests/` directory with 230 tests (135 unit + 95 integration) covering auth, API routes, database, tools, and utilities. 72% code coverage.
+- [ ] **Add frontend test suite** - Create Vitest tests for TypeScript components, API client, and state management.
 - [ ] **Catch specific exceptions** - Multiple bare `except Exception:` handlers in `chat_agent.py`, `routes.py`, and `images.py`. Catch specific exceptions instead.
 
 ### 🟠 Security

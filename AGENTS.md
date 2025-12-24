@@ -6,8 +6,10 @@ This file contains context for Claude Code to work effectively on this project.
 
 - **Dev**: `make dev` (runs Flask + Vite concurrently)
 - **Build**: `make build` (production build)
-- **Lint**: `make lint` (ruff + mypy)
+- **Lint**: `make lint` (ruff + mypy + eslint)
+- **Test**: `make test` (run all tests)
 - **Setup**: `make setup` (venv + deps)
+- **Help**: `make` (show all targets)
 
 ## Project Structure
 
@@ -132,8 +134,24 @@ Uses Google Identity Services (GIS) for client-side authentication:
 - TypeScript for all frontend code (strict mode)
 - Conventional Commits: `type(scope): description`
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-- Run `make lint` before committing
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
+
+## Pre-Commit Checklist
+
+**Before committing any changes, you MUST run:**
+
+```bash
+make lint   # Run all linters (ruff, mypy, eslint)
+make test   # Run all tests
+```
+
+Both commands must pass without errors. If linting fails, run `make lint-fix` to auto-fix issues where possible.
+
+**When implementing new features:**
+- Add tests for new backend code to maintain coverage
+- Place unit tests in `tests/unit/` and integration tests in `tests/integration/`
+- Use existing fixtures from `tests/conftest.py` where applicable
+- Mock all external services (never make real API calls in tests)
 
 ## Input Toolbar
 
@@ -447,6 +465,58 @@ Edit [config.py](src/config.py) `MODELS` dict.
 
 ### Add new icons
 Add SVG constants to [icons.ts](web/src/utils/icons.ts) and import where needed.
+
+## Testing
+
+The project has a comprehensive backend test suite (230 tests, 72% coverage).
+
+### Test Structure
+
+```
+tests/
+├── conftest.py                    # Shared fixtures (database, app, auth, mocks)
+├── fixtures/
+│   └── images.py                  # Test image generators
+├── mocks/
+│   └── gemini.py                  # Mock LLM response builders
+├── unit/                          # Unit tests (isolated function testing)
+│   ├── test_costs.py              # Cost calculations
+│   ├── test_jwt_auth.py           # JWT token handling
+│   ├── test_google_auth.py        # Google token verification
+│   ├── test_chat_agent_helpers.py # Agent helper functions
+│   ├── test_images.py             # Image processing
+│   └── test_tools.py              # Agent tools (mocked externals)
+└── integration/                   # Integration tests (multi-component)
+    ├── test_db_models.py          # Database CRUD operations
+    ├── test_routes_auth.py        # Auth endpoints
+    ├── test_routes_conversations.py  # Conversation CRUD
+    ├── test_routes_chat.py        # Chat endpoints
+    └── test_routes_costs.py       # Cost tracking endpoints
+```
+
+### Key Testing Patterns
+
+- **Isolated SQLite per test**: Each test gets its own database file for complete isolation
+- **Mocked external services**: Gemini LLM, Google Auth, DuckDuckGo, httpx are all mocked
+- **Shared fixtures**: Use `test_user`, `test_conversation`, `auth_headers` from conftest.py
+- **Flask test client**: Use the `client` fixture for HTTP testing
+
+### Running Tests
+
+```bash
+make test              # Run all tests
+make test-unit         # Run unit tests only
+make test-integration  # Run integration tests only
+make test-cov          # Run with coverage report
+```
+
+### Writing New Tests
+
+When adding new features:
+1. Add unit tests for pure functions in `tests/unit/`
+2. Add integration tests for API endpoints in `tests/integration/`
+3. Use existing mock fixtures from `conftest.py` (e.g., `mock_gemini_llm`, `mock_google_tokeninfo`)
+4. Never make real API calls - mock at the right level
 
 ## Related Files
 
