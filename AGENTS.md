@@ -281,7 +281,7 @@ The swipe handler prevents conflicts by giving priority to more specific gesture
 
 When working on mobile/PWA features, beware of these iOS Safari issues:
 
-1. **`100vh` is broken** - Use `height: 100%` on containers instead of `100vh`. iOS Safari calculates `100vh` as if the address bar is hidden, causing content overflow.
+1. **PWA viewport height** - In a PWA (no address bar), use `position: fixed; inset: 0` on the root container (`#app`) to fill the viewport. The flex children (sidebar and main panel) should use `align-self: stretch` (default) to fill the container height. Avoid explicit `height: 100vh` or `height: 100%` on flex children - let flexbox handle it naturally. See [main.css](web/src/styles/main.css) for the working implementation.
 
 2. **Inline `onclick` handlers don't work reliably** - Use event delegation instead of inline `onclick` on dynamically created elements. Attach listeners to parent containers.
 
@@ -615,14 +615,69 @@ def my_function(user_id: str, data: dict) -> None:
 - **Auth**: Token validation, user lookups
 - **File processing**: Validation, thumbnail generation
 
+## PWA Viewport Height Fix
+
+The app uses a specific layout approach to ensure the sidebar and main panel fill 100% of the screen height in PWA mode (no address bar, full screen).
+
+### The Problem
+
+Initially, the app had gaps at the bottom of the sidebar and main panel, especially when the keyboard opened/closed. Various approaches were tried (JavaScript viewport fixes, `100vh`, `100dvh`, `100svh`, explicit heights) but none worked reliably.
+
+### The Solution
+
+The final working solution uses:
+1. **Root container**: `#app` with `position: fixed; inset: 0` - this naturally fills the viewport without needing explicit height
+2. **Flex children**: Sidebar and main panel use `align-self: stretch` (default flexbox behavior) to fill the container height
+3. **No explicit heights**: Avoid `height: 100%` or `height: 100vh` on flex children - let flexbox handle it
+
+### Key Implementation Details
+
+```css
+#app {
+    display: flex;
+    position: fixed;
+    inset: 0;  /* Fills viewport naturally */
+    overflow: hidden;
+}
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;  /* Fills parent height */
+    /* No explicit height needed */
+}
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;  /* Fills parent height */
+    /* No explicit height needed */
+}
+```
+
+### Why This Works
+
+- `position: fixed; inset: 0` makes `#app` fill the viewport regardless of parent height
+- Flexbox's default `align-items: stretch` (on flex container) makes children fill cross-axis (height)
+- No JavaScript needed - pure CSS solution
+- Works consistently in PWA mode where there's no address bar
+
+### Layout Jump Prevention
+
+The conversation cost display below the input area has `min-height: 16px` and is never hidden (no `:empty { display: none }`). This prevents layout jumping when the cost updates or when switching between conversations with/without costs.
+
+**Key files:**
+- [main.css](web/src/styles/main.css) - Layout structure and conversation cost display styling
+
 ## Documentation Maintenance
 
 When making significant changes to the codebase:
 1. Update [README.md](README.md) if user-facing features change
-2. Update this file (CLAUDE.md) if architecture, code patterns, or developer workflows change
+2. Update this file (AGENTS.md) if architecture, code patterns, or developer workflows change
 3. Update [TODO.md](TODO.md) to mark completed items or add new planned work
 
-**Important**: When implementing a new feature, always update documentation as part of the commit - don't wait to be asked. For significant features, add a dedicated section to CLAUDE.md explaining how it works, key files, and any testing/debugging tips.
+**Important**: When implementing a new feature, always update documentation as part of the commit - don't wait to be asked. For significant features, add a dedicated section to AGENTS.md explaining how it works, key files, and any testing/debugging tips.
 
 **When adding new code, always add appropriate logging** - see the Structured Logging section above for guidelines.
 

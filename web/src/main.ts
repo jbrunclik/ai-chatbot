@@ -234,6 +234,7 @@ async function init(): Promise<void> {
       renderGoogleButton(loginBtn);
     }
   });
+
 }
 
 // Load initial data after authentication

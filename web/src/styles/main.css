@@ -35,7 +35,7 @@
 }
 
 html, body {
-    height: 100%;
+    height: 100vh;
     overflow: hidden;
 }
 
@@ -47,10 +47,12 @@ body {
 }
 
 /* App Layout */
+/* Use position: fixed with inset: 0 to fill viewport */
+/* inset: 0 makes it fill the viewport, no explicit height needed */
 #app {
     display: flex;
-    height: 100%;
-    width: 100%;
+    position: fixed;
+    inset: 0;
     overflow: hidden;
 }
 
@@ -62,13 +64,14 @@ body {
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    align-self: stretch;
     padding-top: env(safe-area-inset-top, 0);
-    padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .sidebar-header {
     padding: 16px;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .sidebar-header h1 {
@@ -214,6 +217,7 @@ body {
 .sidebar-footer {
     padding: 16px;
     border-top: 1px solid var(--border);
+    flex-shrink: 0;
 }
 
 .user-info {
@@ -406,7 +410,9 @@ body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    min-height: 0;
     position: relative;
+    align-self: stretch;
 }
 
 /* Mobile Header */
@@ -859,6 +865,7 @@ body {
     padding: 16px 24px 24px;
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
     background-color: var(--bg-primary);
+    flex-shrink: 0;
 }
 
 .input-wrapper {
@@ -1021,6 +1028,7 @@ body {
     text-align: right;
     padding: 4px 16px 0;
     min-height: 16px;
+    height: auto;
     font-variant-numeric: tabular-nums;
 }
 
@@ -1341,7 +1349,8 @@ body {
     }
 
     .input-area {
-        padding: 12px 16px 16px;
+        padding: 12px 16px;
+        padding-bottom: calc(8px + env(safe-area-inset-bottom, 0));
     }
 
     .message {
