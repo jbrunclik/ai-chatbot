@@ -804,9 +804,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
-    ) -> Generator[
-        str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]], None, None
-    ]:
+    ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]]:
         """
         Stream response tokens using LangGraph's stream method.
 

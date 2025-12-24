@@ -2,6 +2,19 @@
 
 A personal AI chatbot web application using Google Gemini APIs, similar to ChatGPT.
 
+## Screenshots
+
+<p align="center">
+  <img src="web/tests/visual/chat.visual.ts-snapshots/conversation-with-messages-chromium-darwin.png" alt="Desktop chat interface" width="600">
+</p>
+
+<p align="center">
+  <img src="web/tests/visual/chat.visual.ts-snapshots/sidebar-conversations-chromium-darwin.png" alt="Sidebar with conversations" width="280">
+  <img src="web/tests/visual/mobile.visual.ts-snapshots/mobile-sidebar-open-chromium-darwin.png" alt="Mobile layout" width="200">
+</p>
+
+<sub>Screenshots from visual regression tests - always up-to-date with the latest UI.</sub>
+
 ## Features
 
 - Chat with Google Gemini AI models (Pro and Flash)
@@ -135,19 +148,39 @@ make deploy     # Deploy systemd service (Linux)
 
 ## Testing
 
-The project includes a comprehensive backend test suite with 230 tests:
+The project includes comprehensive test suites for both backend and frontend:
 
 ```bash
-make test           # Run all tests
+make test           # Run all backend tests
 make test-unit      # Run unit tests only (135 tests)
 make test-integration  # Run integration tests only (95 tests)
 make test-cov       # Run with coverage report (72% coverage)
+make test-all       # Run all tests (backend + frontend)
 ```
+
+### Backend Tests (pytest)
 
 Tests are organized in `tests/`:
 - `tests/unit/` - Unit tests for individual functions (costs, auth, tools, images)
 - `tests/integration/` - Integration tests for API routes and database operations
 - `tests/conftest.py` - Shared fixtures (isolated SQLite per test, mocked external services)
+
+### Frontend Tests (Vitest + Playwright)
+
+```bash
+cd web
+npm test            # Run Vitest unit/component tests (125 tests)
+npm run test:e2e    # Run Playwright E2E tests (42 tests × 2 browsers)
+npm run test:all    # Run all frontend tests
+```
+
+Frontend tests are organized in `web/tests/`:
+- `web/tests/unit/` - Unit tests for API client, DOM utilities, Zustand store (101 tests)
+- `web/tests/component/` - Component tests with jsdom (24 tests)
+- `web/tests/e2e/` - End-to-end browser tests (42 tests per browser)
+- `web/tests/visual/` - Visual regression tests (18 tests per browser)
+
+E2E tests run against a mock Flask server (`tests/e2e-server.py`) that simulates LLM responses without external API calls.
 
 All external services (Gemini API, Google Auth, DuckDuckGo) are mocked - tests run offline and fast.
 

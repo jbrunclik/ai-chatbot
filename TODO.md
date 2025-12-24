@@ -49,7 +49,7 @@ This file tracks planned features, improvements, and technical debt.
 
 ## Phase 5 - Production Hardening
 - [x] Backend test suite (pytest with unit and integration tests)
-- [ ] Frontend test suite (Vitest with component and e2e tests)
+- [x] Frontend test suite (Vitest unit/component tests + Playwright E2E tests)
 - [ ] Rate limiting
 - [x] Request logging and monitoring
 - [x] Database migrations system (yoyo-migrations)
@@ -59,7 +59,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] Docker deployment option
 
 ## CI/CD & DevOps
-- [ ] **GitHub Actions** - Workflow for linting (ruff, mypy) on PRs
+- [x] **GitHub Actions** - Workflow for linting and testing on PRs (runs backend + frontend tests)
 - [ ] **Dependabot** - Configuration for automated dependency updates
 - [ ] Docker image and docker-compose setup
 
@@ -78,7 +78,7 @@ This file tracks planned features, improvements, and technical debt.
 ### 🔴 Critical / High Priority
 - [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
 - [x] **Add backend test suite** - Created `tests/` directory with 230 tests (135 unit + 95 integration) covering auth, API routes, database, tools, and utilities. 72% code coverage.
-- [ ] **Add frontend test suite** - Create Vitest tests for TypeScript components, API client, and state management.
+- [x] **Add frontend test suite** - Created `web/tests/` with Vitest (101 unit + 24 component tests) and Playwright (86 E2E + visual tests). Mock server for E2E tests in `tests/e2e-server.py`.
 - [ ] **Catch specific exceptions** - Multiple bare `except Exception:` handlers in `chat_agent.py`, `routes.py`, and `images.py`. Catch specific exceptions instead.
 
 ### 🟠 Security

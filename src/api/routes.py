@@ -634,7 +634,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
     # Generate a unique request ID for capturing full tool results
     stream_request_id = str(uuid.uuid4())
 
-    def generate() -> Generator[str, None, None]:
+    def generate() -> Generator[str]:
         """Generator that streams tokens as SSE events with keepalive support.
 
         Uses a separate thread to stream LLM tokens into a queue, while the main

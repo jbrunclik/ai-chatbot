@@ -85,6 +85,34 @@ class Config:
         """Check if running in development mode."""
         return cls.FLASK_ENV == "development"
 
+    @classmethod
+    def is_testing(cls) -> bool:
+        """Check if running in testing mode."""
+        return cls.FLASK_ENV == "testing"
+
+    @classmethod
+    def is_e2e_testing(cls) -> bool:
+        """Check if running in E2E testing mode (browser tests with mocked backend).
+
+        E2E tests set E2E_TESTING=true to enable auth bypass while still
+        using FLASK_ENV=testing for other test-specific behavior.
+        """
+        return os.getenv("E2E_TESTING", "").lower() == "true"
+
+    @classmethod
+    def should_bypass_auth(cls) -> bool:
+        """Check if auth should be bypassed.
+
+        Auth is bypassed in:
+        - Development mode (for local dev convenience)
+        - E2E testing mode (browser tests need to skip real auth)
+
+        NOT bypassed in:
+        - Unit/integration tests (need to test auth behavior)
+        - Production
+        """
+        return cls.is_development() or cls.is_e2e_testing()
+
     # Database
     DATABASE_PATH: Path = BASE_DIR / os.getenv("DATABASE_PATH", "chatbot.db")
 

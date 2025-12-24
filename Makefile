@@ -1,4 +1,4 @@
-.PHONY: help setup lint lint-fix run dev build test test-cov test-unit test-integration clean deploy
+.PHONY: help setup lint lint-fix run dev build test test-cov test-unit test-integration test-fe test-fe-unit test-fe-component test-fe-e2e test-fe-visual test-fe-visual-update test-fe-watch test-all clean deploy
 
 VENV := .venv
 PYTHON := $(VENV)/bin/python
@@ -10,21 +10,31 @@ NPM := npm
 help:
 	@echo "AI Chatbot - Available targets:"
 	@echo ""
-	@echo "  setup            Create venv and install dependencies"
-	@echo "  dev              Run Flask + Vite dev servers concurrently"
-	@echo "  run              Run Flask server only"
-	@echo "  build            Production build (Vite)"
+	@echo "  setup                 Create venv and install dependencies"
+	@echo "  dev                   Run Flask + Vite dev servers concurrently"
+	@echo "  run                   Run Flask server only"
+	@echo "  build                 Production build (Vite)"
 	@echo ""
-	@echo "  lint             Run all linters (ruff, mypy, eslint)"
-	@echo "  lint-fix         Auto-fix linting issues"
+	@echo "  lint                  Run all linters (ruff, mypy, eslint)"
+	@echo "  lint-fix              Auto-fix linting issues"
 	@echo ""
-	@echo "  test             Run all tests"
-	@echo "  test-unit        Run unit tests only"
-	@echo "  test-integration Run integration tests only"
-	@echo "  test-cov         Run tests with coverage report"
+	@echo "  test                  Run backend tests"
+	@echo "  test-unit             Run backend unit tests only"
+	@echo "  test-integration      Run backend integration tests only"
+	@echo "  test-cov              Run backend tests with coverage report"
 	@echo ""
-	@echo "  clean            Remove venv, caches, and build artifacts"
-	@echo "  deploy           Deploy to systemd (Hetzner)"
+	@echo "  test-fe               Run all frontend tests (unit + component + e2e)"
+	@echo "  test-fe-unit          Run frontend unit tests"
+	@echo "  test-fe-component     Run frontend component tests"
+	@echo "  test-fe-e2e           Run frontend E2E tests (Playwright)"
+	@echo "  test-fe-visual        Run visual regression tests"
+	@echo "  test-fe-visual-update Update visual regression baselines"
+	@echo "  test-fe-watch         Run frontend tests in watch mode"
+	@echo ""
+	@echo "  test-all              Run all tests (backend + frontend)"
+	@echo ""
+	@echo "  clean                 Remove venv, caches, and build artifacts"
+	@echo "  deploy                Deploy to systemd (Hetzner)"
 
 setup:
 	python3 -m venv $(VENV)
@@ -70,6 +80,30 @@ test-unit:
 test-integration:
 	$(PYTHON) -m pytest tests/integration/ -v
 
+# Frontend tests
+test-fe-unit:
+	cd web && $(NPM) run test:unit
+
+test-fe-component:
+	cd web && $(NPM) run test:component
+
+test-fe-e2e:
+	cd web && $(NPM) run test:e2e
+
+test-fe-visual:
+	cd web && $(NPM) run test:visual
+
+test-fe-visual-update:
+	cd web && $(NPM) run test:visual:update
+
+test-fe: test-fe-unit test-fe-component test-fe-e2e
+
+test-fe-watch:
+	cd web && $(NPM) run test:watch
+
+# All tests (backend + frontend)
+test-all: test test-fe
+
 clean:
 	rm -rf $(VENV)
 	rm -rf __pycache__ src/__pycache__ src/**/__pycache__ tests/__pycache__ tests/**/__pycache__
@@ -77,6 +111,8 @@ clean:
 	rm -rf *.egg-info
 	rm -rf web/node_modules
 	rm -rf static/assets
+	rm -rf web/playwright-report web/test-results
+	rm -rf tests/e2e-test*.db
 	find . -type f -name "*.pyc" -delete
 
 deploy:

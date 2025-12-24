@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any
 
 import jwt
 from flask import Request, g, jsonify, request
@@ -11,8 +11,6 @@ from src.db.models import User, db
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-F = TypeVar("F", bound=Callable[..., Any])
 
 
 def create_token(user: User) -> str:
@@ -59,20 +57,20 @@ def get_current_user() -> User | None:
     return getattr(g, "current_user", None)
 
 
-def require_auth(f: F) -> F:
+def require_auth[F: Callable[..., Any]](f: F) -> F:
     """Decorator to require authentication for a route."""
 
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
-        # Skip auth in local mode
-        if Config.is_development():
+        # Skip auth in development mode and E2E testing (not unit/integration tests)
+        if Config.should_bypass_auth():
             # Create a default local user
             local_user = db.get_or_create_user(
                 email="local@localhost",
                 name="Local User",
             )
             g.current_user = local_user
-            logger.debug("Auth bypassed in development mode")
+            logger.debug("Auth bypassed", extra={"mode": Config.FLASK_ENV})
             return f(*args, **kwargs)
 
         token = get_token_from_request(request)

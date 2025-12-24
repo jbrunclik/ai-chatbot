@@ -468,9 +468,9 @@ Add SVG constants to [icons.ts](web/src/utils/icons.ts) and import where needed.
 
 ## Testing
 
-The project has a comprehensive backend test suite (230 tests, 72% coverage).
+The project has comprehensive test suites for both backend (227 tests, 72% coverage) and frontend (125 Vitest + 114 Playwright tests).
 
-### Test Structure
+### Backend Test Structure
 
 ```
 tests/
@@ -486,37 +486,146 @@ tests/
 │   ├── test_chat_agent_helpers.py # Agent helper functions
 │   ├── test_images.py             # Image processing
 │   └── test_tools.py              # Agent tools (mocked externals)
-└── integration/                   # Integration tests (multi-component)
-    ├── test_db_models.py          # Database CRUD operations
-    ├── test_routes_auth.py        # Auth endpoints
-    ├── test_routes_conversations.py  # Conversation CRUD
-    ├── test_routes_chat.py        # Chat endpoints
-    └── test_routes_costs.py       # Cost tracking endpoints
+├── integration/                   # Integration tests (multi-component)
+│   ├── test_db_models.py          # Database CRUD operations
+│   ├── test_routes_auth.py        # Auth endpoints
+│   ├── test_routes_conversations.py  # Conversation CRUD
+│   ├── test_routes_chat.py        # Chat endpoints
+│   └── test_routes_costs.py       # Cost tracking endpoints
+└── e2e-server.py                  # Mock Flask server for E2E tests (with SSE streaming)
+```
+
+### Frontend Test Structure
+
+```
+web/tests/
+├── global-setup.ts                # Playwright test setup (DB reset before each test)
+├── unit/                          # Vitest unit tests (101 tests)
+│   ├── setup.ts                   # Test setup (jsdom config)
+│   ├── api-client.test.ts         # API client utilities
+│   ├── dom.test.ts                # DOM utilities (escapeHtml, scrollToBottom)
+│   └── store.test.ts              # Zustand store
+├── component/                     # Component tests with jsdom (24 tests)
+│   └── Sidebar.test.ts            # Sidebar interactions
+├── e2e/                           # Playwright E2E tests (42 tests × 2 browsers = 84)
+│   ├── auth.spec.ts               # Authentication flow
+│   ├── chat.spec.ts               # Chat functionality (batch + streaming)
+│   ├── conversation.spec.ts       # Conversation CRUD
+│   └── mobile.spec.ts             # Mobile viewport tests
+└── visual/                        # Visual regression tests (15 tests × 2 browsers = 30)
+    ├── chat.visual.ts             # Chat interface screenshots
+    └── mobile.visual.ts           # Mobile layout screenshots
 ```
 
 ### Key Testing Patterns
 
+**Backend:**
 - **Isolated SQLite per test**: Each test gets its own database file for complete isolation
 - **Mocked external services**: Gemini LLM, Google Auth, DuckDuckGo, httpx are all mocked
 - **Shared fixtures**: Use `test_user`, `test_conversation`, `auth_headers` from conftest.py
 - **Flask test client**: Use the `client` fixture for HTTP testing
 
+**Frontend:**
+- **Vitest for unit/component tests**: Fast, TypeScript-native, uses jsdom for DOM simulation
+- **Playwright for E2E tests**: Real browser testing (chromium, webkit), mock server
+- **E2E test isolation**: Each test resets database via `/test/reset` endpoint
+- **Mock LLM server**: `tests/e2e-server.py` runs Flask with mocked Gemini responses
+- **E2E auth bypass**: Tests set `E2E_TESTING=true` to skip auth (separate from unit test mode)
+
 ### Running Tests
 
 ```bash
-make test              # Run all tests
+# Backend tests
+make test              # Run all backend tests (227 tests)
 make test-unit         # Run unit tests only
 make test-integration  # Run integration tests only
 make test-cov          # Run with coverage report
+
+# Frontend tests (from project root)
+make test-fe           # Run unit + component + E2E tests (functional tests)
+make test-fe-unit      # Run Vitest unit tests (101 tests)
+make test-fe-component # Run component tests (24 tests)
+make test-fe-e2e       # Run Playwright E2E tests (84 tests)
+make test-fe-visual    # Run visual regression tests (30 tests) - see below
+make test-fe-watch     # Run Vitest in watch mode
+
+# All tests
+make test-all          # Run backend + frontend (excl. visual)
+```
+
+**Note on Visual Tests**: Visual tests are intentionally excluded from `make test-fe` because they:
+- Compare screenshots pixel-by-pixel and can fail due to font rendering differences
+- Require baseline updates when UI changes intentionally
+- Run slower than functional tests
+
+Run visual tests separately after intentional UI changes:
+```bash
+make test-fe-visual         # Run and compare against baselines
+make test-fe-visual-update  # Update baselines after UI changes
 ```
 
 ### Writing New Tests
 
-When adding new features:
+**Backend:**
 1. Add unit tests for pure functions in `tests/unit/`
 2. Add integration tests for API endpoints in `tests/integration/`
 3. Use existing mock fixtures from `conftest.py` (e.g., `mock_gemini_llm`, `mock_google_tokeninfo`)
 4. Never make real API calls - mock at the right level
+
+**Frontend:**
+1. Add unit tests for utilities in `web/tests/unit/`
+2. Add component tests in `web/tests/components/` (use jsdom for DOM simulation)
+3. Add E2E tests in `web/tests/e2e/` for user workflows
+4. Use `global-setup.ts` fixtures for isolated test state
+5. For mobile tests, use `test.use({ viewport: { width: 375, height: 812 } })`
+6. Both batch and streaming modes are fully supported by the mock server
+
+### E2E Test Server
+
+The E2E test server (`tests/e2e-server.py`) is a Flask app that mocks external services:
+
+- **Mock LLM**: Returns mock responses with proper AIMessage objects for LangGraph
+- **SSE Streaming**: Custom endpoint streams tokens word-by-word via Server-Sent Events
+- **Auth bypass**: `E2E_TESTING=true` skips Google auth and JWT validation
+- **Database reset**: `/test/reset` endpoint clears database between tests
+- **Isolated DB**: Each test run uses a unique database file
+
+To run E2E tests manually:
+```bash
+# Terminal 1: Start mock server
+cd web && python ../tests/e2e-server.py
+
+# Terminal 2: Run tests
+cd web && npx playwright test
+```
+
+### Visual Regression Tests
+
+Visual tests capture screenshots and compare against baselines. Use them to verify UI changes haven't broken anything unintentionally.
+
+```bash
+make test-fe-visual           # Run visual tests against baselines
+make test-fe-visual-update    # Update baselines after intentional UI changes
+```
+
+**Baseline locations:**
+- `web/tests/visual/chat.visual.ts-snapshots/` - Desktop chat interface
+- `web/tests/visual/mobile.visual.ts-snapshots/` - Mobile/iPad layouts
+
+**When to run visual tests:**
+- After making CSS changes
+- After modifying component structure
+- After changing responsive breakpoints
+- Before committing UI changes (to verify no regressions)
+
+**When to update baselines:**
+- After intentional UI changes (run `make test-fe-visual-update`)
+- Commit the new baseline screenshots with your UI changes
+
+**Troubleshooting visual test failures:**
+- Check `web/playwright-report/index.html` for diff images
+- Ensure tests run with consistent viewport sizes
+- Font rendering differences between machines can cause false failures
 
 ## Related Files
 
