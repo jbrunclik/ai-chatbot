@@ -19,19 +19,24 @@ from src.agent.chat_agent import (
 from src.api.errors import (
     auth_forbidden_error,
     auth_invalid_error,
-    invalid_json_error,
     llm_error,
     not_found_error,
     server_error,
     validation_error,
+)
+from src.api.schemas import (
+    ChatRequest,
+    CreateConversationRequest,
+    GoogleAuthRequest,
+    UpdateConversationRequest,
 )
 from src.api.utils import (
     build_chat_response,
     build_stream_done_event,
     calculate_and_save_message_cost,
     extract_metadata_fields,
-    get_request_json,
 )
+from src.api.validation import validate_request
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
 from src.config import Config
@@ -53,21 +58,15 @@ auth = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 @auth.route("/google", methods=["POST"])
-def google_auth() -> tuple[dict[str, Any], int]:
+@validate_request(GoogleAuthRequest)
+def google_auth(data: GoogleAuthRequest) -> tuple[dict[str, Any], int]:
     """Authenticate with Google ID token from Sign In with Google."""
     logger.info("Google authentication request")
     if Config.is_development():
         logger.warning("Authentication attempted in development mode")
         return validation_error("Authentication disabled in local mode")
 
-    data = get_request_json(request)
-    if data is None:
-        return invalid_json_error()
-    id_token = data.get("credential")
-
-    if not id_token:
-        logger.warning("Google auth request missing credential")
-        return validation_error("Missing credential", field="credential")
+    id_token = data.credential
 
     try:
         logger.debug("Verifying Google ID token")
@@ -161,29 +160,13 @@ def list_conversations() -> dict[str, list[dict[str, str]]]:
 
 @api.route("/conversations", methods=["POST"])
 @require_auth
-def create_conversation() -> tuple[dict[str, str], int]:
+@validate_request(CreateConversationRequest)
+def create_conversation(data: CreateConversationRequest) -> tuple[dict[str, str], int]:
     """Create a new conversation."""
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
-    data = get_request_json(request)
-    if data is None:
-        return invalid_json_error()
-    model = data.get("model", Config.DEFAULT_MODEL)
-    log_payload_snippet(logger, data)
-
-    if model not in Config.MODELS:
-        logger.warning(
-            "Invalid model requested",
-            extra={
-                "user_id": user.id,
-                "model": model,
-                "available_models": list(Config.MODELS.keys()),
-            },
-        )
-        return validation_error(
-            f"Invalid model. Choose from: {list(Config.MODELS.keys())}",
-            field="model",
-        )
+    model = data.model or Config.DEFAULT_MODEL
+    log_payload_snippet(logger, {"model": model})
 
     logger.debug("Creating conversation", extra={"user_id": user.id, "model": model})
     conv = db.create_conversation(user.id, model=model)
@@ -271,26 +254,16 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
 
 @api.route("/conversations/<conv_id>", methods=["PATCH"])
 @require_auth
-def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
+@validate_request(UpdateConversationRequest)
+def update_conversation(
+    data: UpdateConversationRequest, conv_id: str
+) -> tuple[dict[str, str], int]:
     """Update a conversation (title, model)."""
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
-    data = get_request_json(request)
-    if data is None:
-        return invalid_json_error()
-    title = data.get("title")
-    model = data.get("model")
-    log_payload_snippet(logger, data)
-
-    if model and model not in Config.MODELS:
-        logger.warning(
-            "Invalid model in update request",
-            extra={"user_id": user.id, "conversation_id": conv_id, "model": model},
-        )
-        return validation_error(
-            f"Invalid model. Choose from: {list(Config.MODELS.keys())}",
-            field="model",
-        )
+    title = data.title
+    model = data.model
+    log_payload_snippet(logger, {"title": title, "model": model})
 
     logger.debug(
         "Updating conversation",
@@ -333,12 +306,13 @@ def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
 
 @api.route("/conversations/<conv_id>/chat/batch", methods=["POST"])
 @require_auth
-def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
+@validate_request(ChatRequest)
+def chat_batch(data: ChatRequest, conv_id: str) -> tuple[dict[str, str], int]:
     """Send a message and get a complete response (non-streaming).
 
     Accepts JSON body with:
-    - message: str (required) - the text message
-    - files: list[dict] (optional) - array of {name, type, data} file objects
+    - message: str (optional if files present) - the text message
+    - files: list[dict] (optional if message present) - array of {name, type, data} file objects
     - force_tools: list[str] (optional) - list of tool names to force (e.g. ["web_search"])
     """
     user = get_current_user()
@@ -352,25 +326,15 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         )
         return not_found_error("Conversation")
 
-    data = get_request_json(request)
-    if data is None:
-        return invalid_json_error()
-    message_text = data.get("message", "").strip()
-    files = data.get("files", [])
-    force_tools = data.get("force_tools", [])
+    message_text = data.message.strip()
+    files = [f.model_dump() for f in data.files]  # Convert Pydantic models to dicts
+    force_tools = data.force_tools
     log_payload_snippet(
         logger,
         {"message_length": len(message_text), "file_count": len(files), "force_tools": force_tools},
     )
 
-    if not message_text and not files:
-        logger.warning(
-            "Chat request missing message and files",
-            extra={"user_id": user.id, "conversation_id": conv_id},
-        )
-        return validation_error("Message or files required")
-
-    # Validate files if present
+    # Content validation for files (base64 decoding, size) - structure already validated by Pydantic
     if files:
         logger.debug(
             "Validating files",
@@ -584,12 +548,13 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
 
 @api.route("/conversations/<conv_id>/chat/stream", methods=["POST"])
 @require_auth
-def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
+@validate_request(ChatRequest)
+def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, str], int]:
     """Send a message and stream the response via Server-Sent Events.
 
     Accepts JSON body with:
-    - message: str (required) - the text message
-    - files: list[dict] (optional) - array of {name, type, data} file objects
+    - message: str (optional if files present) - the text message
+    - files: list[dict] (optional if message present) - array of {name, type, data} file objects
     - force_tools: list[str] (optional) - list of tool names to force (e.g. ["web_search"])
 
     Uses SSE keepalive heartbeats to prevent proxy timeouts during long LLM thinking phases.
@@ -606,25 +571,15 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
         )
         return not_found_error("Conversation")
 
-    data = get_request_json(request)
-    if data is None:
-        return invalid_json_error()
-    message_text = data.get("message", "").strip()
-    files = data.get("files", [])
-    force_tools = data.get("force_tools", [])
+    message_text = data.message.strip()
+    files = [f.model_dump() for f in data.files]  # Convert Pydantic models to dicts
+    force_tools = data.force_tools
     log_payload_snippet(
         logger,
         {"message_length": len(message_text), "file_count": len(files), "force_tools": force_tools},
     )
 
-    if not message_text and not files:
-        logger.warning(
-            "Stream chat request missing message and files",
-            extra={"user_id": user.id, "conversation_id": conv_id},
-        )
-        return validation_error("Message or files required")
-
-    # Validate files if present
+    # Content validation for files (base64 decoding, size) - structure already validated by Pydantic
     if files:
         logger.debug(
             "Validating files for stream",
