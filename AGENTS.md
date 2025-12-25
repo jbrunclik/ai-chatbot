@@ -342,12 +342,11 @@ The app implements several optimizations to minimize token costs:
 The app automatically scrolls to the bottom when loading conversations and when new messages are added, but handles lazy-loaded images specially to avoid scrolling before images have loaded and affected the layout.
 
 **How it works:**
-1. **Initial conversation load**: When `renderMessages()` is called, it checks if there are images that need to be loaded from the server
-2. **Skip immediate scroll**: If images need loading and scroll-on-image-load is enabled, the immediate scroll is skipped
-3. **Track image loads**: Each image that starts loading increments a `pendingImageLoads` counter
-4. **Wait for completion**: The code waits for each image's `load` event (not just the fetch) to ensure it has fully rendered
-5. **Debounced smooth scroll**: When all images finish loading (`pendingImageLoads === 0`), a smooth scroll animation is triggered after layout has settled
-6. **Smooth animation**: Uses custom ease-out-cubic easing with duration based on scroll distance (300-600ms)
+1. **Initial conversation load**: When `renderMessages()` is called, it always scrolls to bottom immediately to ensure latest messages are visible and images at the bottom become visible (triggering IntersectionObserver)
+2. **Track image loads**: Each image that starts loading increments a `pendingImageLoads` counter
+3. **Wait for completion**: The code waits for each image's `load` event (not just the fetch) to ensure it has fully rendered
+4. **Debounced smooth scroll**: When all images finish loading (`pendingImageLoads === 0`), a smooth scroll animation is triggered after layout has settled
+5. **Smooth animation**: Uses custom ease-out-cubic easing with duration based on scroll distance (300-600ms)
 
 **New message additions (batch and streaming):**
 When a new message with images is added (via `sendBatchMessage()` or `finalizeStreamingMessage()`):
@@ -368,12 +367,80 @@ When a new message with images is added (via `sendBatchMessage()` or `finalizeSt
 - Used both for button clicks and automatic scrolls after image loading
 - Prevents abrupt flashing when images load and push content down
 
+**User scroll detection:**
+The app tracks user scrolls to disable auto-scroll when the user is browsing history:
+- A scroll listener is set up when `enableScrollOnImageLoad()` is called
+- If the user scrolls more than 200px from the bottom, auto-scroll is disabled
+- This prevents hijacking the scroll position when the user is viewing older messages
+- **Critical**: The scroll listener distinguishes between user scrolls and programmatic scrolls (see Programmatic Scroll Wrapper below)
+
+**Scroll hijacking prevention:**
+When images load while the user is scrolled up, the system checks scroll position at multiple points to prevent race conditions:
+- **Image load completion**: When an image finishes loading, the handler immediately checks scroll position using `isScrolledToBottom()` BEFORE decrementing `pendingImageLoads`. This prevents a race condition where layout changes from image loading could make the scroll position appear >200px from bottom, causing incorrect disabling. By checking BEFORE, we capture the state before layout changes affect the check.
+- **Scheduled scroll protection**: The `isSchedulingScroll` flag prevents the user scroll listener from disabling scroll mode while a scroll is actively being scheduled. This prevents false positives from layout shifts during image loading.
+- **Safe disable function**: `safelyDisableScrollOnImageLoad()` checks `isSchedulingScroll` before actually disabling scroll mode. This centralizes the logic and prevents race conditions.
+- **Scheduled scroll**: `scheduleScrollAfterImageLoad()` re-checks `shouldScrollOnImageLoad` inside nested RAFs and ignores scroll-away checks when `isSchedulingScroll` is true (layout changes can cause false positives).
+- **Final verification**: Verifies the user is still at/near the bottom using `isScrolledToBottom()` before actually scrolling
+- If the user has scrolled up at any point, disables scroll mode immediately and returns early (prevents hijacking)
+
+**Race condition fixes:**
+1. **Image load timing**: The scroll listener has a 100ms debounce, but images can load faster than that. Without the immediate scroll position check in the image load handler, an image could finish loading while `shouldScrollOnImageLoad` is still `true` (because the debounced handler hasn't run yet), causing an unwanted scroll. The fix checks scroll position synchronously when the image finishes loading, ensuring we never scroll when the user has scrolled up, regardless of timing.
+
+2. **Layout shift false positives**: When images load, they cause layout shifts that can temporarily make it appear the user has scrolled away from the bottom (scrollHeight increases, making distanceFromBottom > 200px). The `isSchedulingScroll` flag prevents the user scroll listener from disabling scroll mode during these layout shifts, and `scheduleScrollAfterImageLoad()` ignores scroll-away checks when `isSchedulingScroll` is true.
+
+3. **Cached images on initial load**: On initial load, images may load instantly from cache before IntersectionObserver fires or before we can count them. The system checks ALL images (not just tracked ones) when `pendingImageLoads` is 0, and verifies all tracked images are actually loaded before scheduling scroll. This handles race conditions where multiple images load instantly (most commonly observed with 2 images, but applies to any number).
+
 **Key files:**
-- [thumbnails.ts](web/src/utils/thumbnails.ts) - Image load tracking, `enableScrollOnImageLoad()`, `scheduleScrollAfterImageLoad()`
+- [thumbnails.ts](web/src/utils/thumbnails.ts) - Image load tracking, `enableScrollOnImageLoad()`, `scheduleScrollAfterImageLoad()`, `programmaticScrollToBottom()`, user scroll detection
 - [dom.ts](web/src/utils/dom.ts) - `scrollToBottom()` with smooth animation, `isScrolledToBottom()`
-- [Messages.ts](web/src/components/Messages.ts) - `renderMessages()` skips immediate scroll when images need loading
+- [Messages.ts](web/src/components/Messages.ts) - `renderMessages()` always scrolls to bottom first
 - [main.ts](web/src/main.ts) - `sendBatchMessage()` handles scroll logic for new messages with images
 - [ScrollToBottom.ts](web/src/components/ScrollToBottom.ts) - Button component that triggers smooth scroll
+
+### Programmatic Scroll Wrapper
+
+The app uses a programmatic scroll wrapper to distinguish between user-initiated scrolls and app-initiated scrolls, preventing the user scroll listener from incorrectly disabling auto-scroll.
+
+**Why it exists:**
+- The user scroll listener disables auto-scroll when the user scrolls up (browsing history)
+- Without the wrapper, programmatic scrolls (from `scrollToBottom()`, `renderMessages()`, etc.) would be detected as user scrolls
+- This would cause auto-scroll to be disabled immediately after the app scrolls, breaking the scroll-on-image-load behavior
+
+**How it works:**
+- `programmaticScrollToBottom()` automatically sets programmatic scroll markers before and after scrolling
+- The scroll listener checks `isProgrammaticScroll` flag and ignores programmatic scrolls
+- Markers are cleared after a short delay (150ms) to ensure scroll events have fired
+
+**When to use:**
+- **Always use `programmaticScrollToBottom()`** instead of raw `scrollToBottom()` for any programmatic scroll operations
+- This includes:
+  - Scrolling after rendering messages
+  - Scrolling after adding new messages
+  - Scrolling after images load
+  - Any other app-initiated scroll operations
+
+**How to use:**
+```typescript
+import { programmaticScrollToBottom } from './utils/thumbnails';
+
+// Instead of:
+scrollToBottom(container, false);
+
+// Use:
+programmaticScrollToBottom(container, false);
+
+// For smooth scrolling:
+programmaticScrollToBottom(container, true);
+```
+
+**Implementation details:**
+- `markProgrammaticScrollStart()` - Sets flag before scroll
+- `markProgrammaticScrollEnd()` - Clears flag after scroll (with 150ms delay for scroll events)
+- `programmaticScrollToBottom()` - Convenience wrapper that handles markers automatically
+- For smooth scrolls, waits 700ms before clearing the flag (smooth scroll takes 300-600ms)
+
+**Key files:**
+- [thumbnails.ts](web/src/utils/thumbnails.ts) - `programmaticScrollToBottom()`, `markProgrammaticScrollStart()`, `markProgrammaticScrollEnd()`, user scroll listener
 
 ## Version Update Banner
 

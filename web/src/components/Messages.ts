@@ -1,6 +1,12 @@
 import { escapeHtml, getElementById, scrollToBottom, isScrolledToBottom } from '../utils/dom';
 import { renderMarkdown, highlightAllCodeBlocks } from '../utils/markdown';
-import { observeThumbnail, isScrollOnImageLoadEnabled } from '../utils/thumbnails';
+import {
+  observeThumbnail,
+  markProgrammaticScrollStart,
+  markProgrammaticScrollEnd,
+  countVisibleImagesForScroll,
+  setDeferImageObservation,
+} from '../utils/thumbnails';
 import { createUserAvatarElement } from '../utils/avatar';
 import { checkScrollButtonVisibility } from './ScrollToBottom';
 import {
@@ -65,28 +71,63 @@ export function renderMessages(messages: Message[]): void {
   }
 
   container.innerHTML = '';
+
+  // Defer image observation until after we count them
+  // This prevents IntersectionObserver from firing synchronously before we count
+  setDeferImageObservation(true);
+
   messages.forEach((msg) => {
     addMessageToUI(msg, container);
   });
 
-  // Check if there are images that need to be loaded from the server
-  // If scroll-on-image-load is enabled and there are such images, skip immediate scroll
-  // The image loading code will handle scrolling after all images load
-  const hasImagesToLoad = messages.some((msg) =>
-    msg.files?.some((f) => f.type.startsWith('image/') && !f.previewUrl)
-  );
-
-  if (isScrollOnImageLoadEnabled() && hasImagesToLoad) {
-    // Don't scroll immediately - let image loading code handle it after all images load
-    // This prevents scrolling before images have loaded and affected the layout
-  } else {
-    // No images to load, or scroll-on-load is disabled - scroll immediately
-    scrollToBottom(container);
-  }
-
-  // Update button visibility after rendering messages
+  // Always scroll to bottom first - this ensures:
+  // 1. User sees the latest messages immediately
+  // 2. Images at the bottom become visible
+  // Mark as programmatic so the user scroll listener doesn't disable auto-scroll
+  // Wait for layout to settle before scrolling (scrollHeight needs to be accurate)
   requestAnimationFrame(() => {
-    checkScrollButtonVisibility();
+    requestAnimationFrame(() => {
+      markProgrammaticScrollStart();
+      scrollToBottom(container);
+      // Wait for scroll to complete before clearing the programmatic flag
+      requestAnimationFrame(() => {
+        markProgrammaticScrollEnd();
+      });
+    });
+  });
+
+  // Count visible images after scroll completes and layout has settled
+  // Use double requestAnimationFrame to ensure layout is fully settled
+  // Then observe in setTimeout(0) to ensure counting happens in current tick, observation in next tick
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      // Count images now that they're visible after scroll and layout has settled
+      countVisibleImagesForScroll();
+
+      // Use setTimeout(0) to observe in the next event loop tick
+      // This ensures counting happens in the current tick, observation in the next tick
+      // This prevents IntersectionObserver from firing synchronously before we count
+      setTimeout(() => {
+        // Now observe all images that need loading
+        // This will trigger IntersectionObserver, but we've already counted visible ones
+        // The scrollTracked flag prevents double-counting in IntersectionObserver callback
+        setDeferImageObservation(false);
+        const imagesToObserve = container.querySelectorAll<HTMLImageElement>(
+          'img[data-message-id][data-file-index]:not([src])'
+        );
+        imagesToObserve.forEach((img) => {
+          observeThumbnail(img);
+        });
+      }, 0);
+    });
+  });
+
+  // Final check after a short delay to catch any edge cases
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      countVisibleImagesForScroll();
+      checkScrollButtonVisibility();
+    });
   });
 }
 
@@ -267,6 +308,11 @@ function renderMessageFiles(files: FileMetadata[], messageId: string): HTMLEleme
         img.addEventListener('load', () => {
           imgWrapper.classList.remove('loading');
         });
+
+        // Observe the image for lazy loading
+        // Note: During renderMessages(), we'll also observe after counting to ensure
+        // we count before IntersectionObserver fires, but we still need to observe here
+        // for cases where images are added outside of renderMessages() (e.g., streaming)
         observeThumbnail(img);
       }
 
