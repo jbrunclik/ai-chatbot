@@ -584,6 +584,15 @@ function retryFromDraft(): void {
   }
 }
 
+// Track active requests per conversation to allow continuation when switching
+interface ActiveRequest {
+  conversationId: string;
+  type: 'stream' | 'batch';
+  abortController?: AbortController;
+}
+
+const activeRequests = new Map<string, ActiveRequest>();
+
 // Send message with streaming response
 async function sendStreamingMessage(
   convId: string,
@@ -594,9 +603,27 @@ async function sendStreamingMessage(
   const messageEl = addStreamingMessage();
   let fullContent = '';
   let errorHandledViaEvent = false;
+  const requestId = `stream-${convId}-${Date.now()}`;
+
+  // Track this request
+  const request: ActiveRequest = {
+    conversationId: convId,
+    type: 'stream',
+  };
+  activeRequests.set(requestId, request);
 
   try {
+    // Check if conversation is still current before processing each event
     for await (const event of chat.stream(convId, message, files, forceTools)) {
+      // Check if user switched conversations - if so, silently continue in background
+      const store = useStore.getState();
+      const isCurrentConversation = store.currentConversation?.id === convId;
+
+      if (!isCurrentConversation) {
+        // User switched conversations - continue processing in background but don't update UI
+        // The message will be saved to DB and visible when user switches back
+        continue;
+      }
       if (event.type === 'token') {
         fullContent += event.text;
         updateStreamingMessage(messageEl, fullContent);
@@ -673,33 +700,50 @@ async function sendStreamingMessage(
     }
   } catch (error) {
     console.error('Streaming failed:', error);
-    // Keep partial content if any was received
-    if (fullContent.trim()) {
-      messageEl.classList.add('message-incomplete');
-    } else {
-      messageEl.remove();
-    }
 
-    // Handle errors that weren't already handled via error event
-    // This is a fallback for errors that occur before streaming starts
-    if (!errorHandledViaEvent) {
-      if (error instanceof ApiError) {
-        if (error.isTimeout) {
-          toast.error('Request timed out. Your message has been saved.', {
-            action: { label: 'Retry', onClick: () => retryFromDraft() },
-          });
-        } else if (error.retryable) {
-          toast.error(error.message || 'Failed to generate response.', {
-            action: { label: 'Retry', onClick: () => retryFromDraft() },
-          });
-        } else {
-          toast.error(error.message || 'Failed to generate response.');
-        }
+    // Check if conversation is still current before showing errors
+    const store = useStore.getState();
+    const isCurrentConversation = store.currentConversation?.id === convId;
+
+    if (isCurrentConversation) {
+      // Keep partial content if any was received
+      if (fullContent.trim()) {
+        messageEl.classList.add('message-incomplete');
       } else {
-        // Re-throw non-ApiErrors to be handled by outer sendMessage catch
-        throw error;
+        messageEl.remove();
+      }
+
+      // Handle errors that weren't already handled via event
+      // This is a fallback for errors that occur before streaming starts
+      if (!errorHandledViaEvent) {
+        if (error instanceof ApiError) {
+          if (error.isTimeout) {
+            toast.error('Request timed out. Your message has been saved.', {
+              action: { label: 'Retry', onClick: () => retryFromDraft() },
+            });
+          } else if (error.retryable) {
+            toast.error(error.message || 'Failed to generate response.', {
+              action: { label: 'Retry', onClick: () => retryFromDraft() },
+            });
+          } else {
+            toast.error(error.message || 'Failed to generate response.');
+          }
+        } else {
+          // Re-throw non-ApiErrors to be handled by outer sendMessage catch
+          throw error;
+        }
+      }
+    } else {
+      // User switched conversations - silently handle error, message will be in DB
+      if (fullContent.trim()) {
+        messageEl.classList.add('message-incomplete');
+      } else {
+        messageEl.remove();
       }
     }
+  } finally {
+    // Clean up request tracking
+    activeRequests.delete(requestId);
   }
 }
 
@@ -710,10 +754,30 @@ async function sendBatchMessage(
   files: ReturnType<typeof getPendingFiles>,
   forceTools: string[]
 ): Promise<void> {
+  const requestId = `batch-${convId}-${Date.now()}`;
+
+  // Track this request
+  const request: ActiveRequest = {
+    conversationId: convId,
+    type: 'batch',
+  };
+  activeRequests.set(requestId, request);
+
   showLoadingIndicator();
 
   try {
     const response = await chat.sendBatch(convId, message, files, forceTools);
+
+    // Check if conversation is still current before updating UI
+    const store = useStore.getState();
+    const isCurrentConversation = store.currentConversation?.id === convId;
+
+    if (!isCurrentConversation) {
+      // User switched conversations - message is saved to DB, just hide loading
+      hideLoadingIndicator();
+      return;
+    }
+
     hideLoadingIndicator();
 
     const assistantMessage: Message = {
@@ -784,7 +848,20 @@ async function sendBatchMessage(
     await updateConversationCost(convId);
   } catch (error) {
     hideLoadingIndicator();
+
+    // Check if conversation is still current before showing errors
+    const store = useStore.getState();
+    const isCurrentConversation = store.currentConversation?.id === convId;
+
+    if (!isCurrentConversation) {
+      // User switched conversations - silently handle error, message will be in DB
+      return;
+    }
+
     throw error;
+  } finally {
+    // Clean up request tracking
+    activeRequests.delete(requestId);
   }
 }
 

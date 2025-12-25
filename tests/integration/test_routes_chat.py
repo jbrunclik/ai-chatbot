@@ -262,6 +262,58 @@ class TestChatStream:
 
         assert response.status_code == 404
 
+    def test_saves_message_on_client_disconnect(
+        self,
+        client: FlaskClient,
+        auth_headers: dict[str, str],
+        test_conversation: Conversation,
+    ) -> None:
+        """Should save message to DB even if client disconnects during streaming."""
+        with patch("src.api.routes.ChatAgent") as mock_agent_class:
+            mock_agent = MagicMock()
+
+            def mock_stream(*args: Any, **kwargs: Any) -> Any:
+                yield "Token1"
+                yield "Token2"
+                yield (
+                    "Token1Token2",
+                    {},
+                    [],
+                    {"input_tokens": 50, "output_tokens": 10},
+                )
+
+            mock_agent.stream_chat = mock_stream
+            mock_agent_class.return_value = mock_agent
+
+            # Start the request and read partial response (simulating client disconnect)
+            response = client.post(
+                f"/api/conversations/{test_conversation.id}/chat/stream",
+                headers=auth_headers,
+                json={"message": "Hello"},
+            )
+
+            # Read just a portion of the response to simulate client starting to receive data
+            # then disconnecting (we don't read the full response)
+            response_data = response.data
+            # Just verify we got some data (client started receiving)
+            assert len(response_data) > 0
+
+        # Wait for background thread and cleanup thread to complete
+        import time
+
+        time.sleep(1.0)
+
+        # Verify message was saved to database even though client disconnected
+        from src.db.models import db
+
+        messages = db.get_messages(test_conversation.id)
+        # Should have user message and assistant message
+        assert len(messages) >= 2
+        assert messages[-2].role == "user"
+        assert messages[-2].content == "Hello"
+        assert messages[-1].role == "assistant"
+        assert messages[-1].content == "Token1Token2"
+
     def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.post(

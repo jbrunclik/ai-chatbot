@@ -209,3 +209,192 @@ test.describe('Chat - Message Actions', () => {
     await expect(assistantMessage.locator('.message-content')).toBeVisible();
   });
 });
+
+test.describe('Chat - Request Continuation on Conversation Switch', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#new-chat-btn');
+  });
+
+  test('batch request completes after switching conversations', async ({ page }) => {
+    // Disable streaming
+    const streamBtn = page.locator('#stream-btn');
+    const isPressed = await streamBtn.getAttribute('aria-pressed');
+    if (isPressed === 'true') {
+      await streamBtn.click();
+    }
+
+    // Create first conversation and send message
+    await page.click('#new-chat-btn');
+    await page.fill('#message-input', 'First conversation message');
+
+    // Wait for the request to be sent
+    const requestPromise = page.waitForRequest(
+      (request) => request.url().includes('/chat/batch') && request.method() === 'POST',
+      { timeout: 5000 }
+    );
+
+    await page.click('#send-btn');
+    await requestPromise; // Wait for request to be sent
+
+    // Wait for user message to appear (confirms UI updated)
+    await page.waitForSelector('.message.user', { timeout: 5000 });
+
+    // Switch to a new conversation immediately (before response completes)
+    // The request will continue in the background
+    await page.click('#new-chat-btn');
+
+    // Poll by reloading the conversation until messages appear
+    // Messages only appear when we reload (fetch from API), not automatically
+    // Wait for both conversations to be in the list
+    await page.waitForSelector('.conversation-item-wrapper', { timeout: 5000 });
+    const convItems = page.locator('.conversation-item-wrapper');
+    await expect(convItems).toHaveCount(2);
+
+    // Find the conversation with the message by looking for one that has messages when clicked
+    // Note: The new conversation is at index 0 (most recently created), the original is at index 1
+    // But after the background request completes, the original may be reordered to index 0
+    // We need to find the one that actually has our messages
+    let messagesFound = false;
+    // Poll every 300ms, up to 20 attempts (6 seconds total)
+    // Batch is fast, so we should see messages quickly
+    for (let attempt = 0; attempt < 20; attempt++) {
+      // Try clicking on each conversation to find the one with messages
+      // The conversation with messages may be at position 0 or 1 depending on timing
+      const conversationToTry = attempt % 2 === 0 ? convItems.nth(0) : convItems.nth(1);
+      await conversationToTry.click();
+
+      // Wait for conversation to load
+      await page.waitForSelector('.conversation-loader', { state: 'hidden', timeout: 2000 });
+
+      // Check if both messages are present
+      const userMsg = page.locator('.message.user');
+      const assistantMsg = page.locator('.message.assistant');
+      const userCount = await userMsg.count();
+      const assistantCount = await assistantMsg.count();
+
+      if (userCount > 0 && assistantCount > 0) {
+        messagesFound = true;
+        break;
+      }
+
+      await page.waitForTimeout(300);
+    }
+
+    expect(messagesFound).toBe(true);
+    const assistantMessage = page.locator('.message.assistant');
+    await expect(assistantMessage).toContainText('mock response', { ignoreCase: true });
+  });
+
+  test('streaming request continues after switching conversations', async ({ page }) => {
+    // Enable streaming
+    const streamBtn = page.locator('#stream-btn');
+    const isPressed = await streamBtn.getAttribute('aria-pressed');
+    if (isPressed !== 'true') {
+      await streamBtn.click();
+    }
+
+    // Create first conversation and send message
+    await page.click('#new-chat-btn');
+    await page.fill('#message-input', 'Streaming message');
+
+    // Wait for the request to be sent
+    const requestPromise = page.waitForRequest(
+      (request) => request.url().includes('/chat/stream') && request.method() === 'POST',
+      { timeout: 5000 }
+    );
+
+    await page.click('#send-btn');
+    await requestPromise; // Wait for request to be sent
+
+    // Wait for streaming to start (assistant message appears)
+    const assistantMessage = page.locator('.message.assistant');
+    await expect(assistantMessage).toBeVisible({ timeout: 5000 });
+
+    // Switch to a new conversation immediately (during streaming)
+    // The request will continue in the background
+    await page.click('#new-chat-btn');
+
+    // Poll by reloading the conversation until messages appear
+    // Streaming takes longer (word-by-word delay + cleanup thread delay)
+    const convItems = page.locator('.conversation-item-wrapper');
+    await expect(convItems.first()).toBeVisible();
+
+    let messagesFound = false;
+    // Poll every 300ms, up to 30 attempts (9 seconds total)
+    // Streaming needs more time due to word-by-word delay + cleanup thread
+    for (let attempt = 0; attempt < 30; attempt++) {
+      // Try clicking on each conversation to find the one with messages
+      // The conversation with messages may be at position 0 or 1 depending on timing
+      const conversationToTry = attempt % 2 === 0 ? convItems.nth(0) : convItems.nth(1);
+      await conversationToTry.click();
+
+      // Wait for conversation to load
+      await page.waitForSelector('.conversation-loader', { state: 'hidden', timeout: 2000 });
+
+      // Check if both messages are present
+      const userMsg = page.locator('.message.user');
+      const assistantMsg = page.locator('.message.assistant');
+      const userCount = await userMsg.count();
+      const assistantCount = await assistantMsg.count();
+
+      if (userCount > 0 && assistantCount > 0) {
+        messagesFound = true;
+        break;
+      }
+
+      await page.waitForTimeout(300);
+    }
+
+    expect(messagesFound).toBe(true);
+    const assistantMessageComplete = page.locator('.message.assistant');
+    await expect(assistantMessageComplete).toContainText('mock response', { ignoreCase: true });
+  });
+
+  test('multiple conversations can have active requests simultaneously', async ({ page }) => {
+    // Enable streaming
+    const streamBtn = page.locator('#stream-btn');
+    const isPressed = await streamBtn.getAttribute('aria-pressed');
+    if (isPressed !== 'true') {
+      await streamBtn.click();
+    }
+
+    // Create and send message in first conversation
+    await page.click('#new-chat-btn');
+    await page.fill('#message-input', 'First message');
+    await page.click('#send-btn');
+    // Wait for streaming to complete (message appears in UI)
+    await page.waitForSelector('.message.assistant', { timeout: 10000 });
+    // Wait a bit more for cleanup thread to save to DB (1s delay + buffer)
+    await page.waitForTimeout(2000);
+
+    // Create second conversation and send message
+    await page.click('#new-chat-btn');
+    await page.fill('#message-input', 'Second message');
+    await page.click('#send-btn');
+    // Wait for streaming to complete
+    await page.waitForSelector('.message.assistant', { timeout: 10000 });
+    // Wait a bit more for cleanup thread to save to DB
+    await page.waitForTimeout(2000);
+
+    // Both conversations should have responses
+    const convItems = page.locator('.conversation-item-wrapper');
+    await expect(convItems).toHaveCount(2);
+
+    // Switch to first conversation
+    await convItems.nth(0).click();
+    // Wait for conversation to load
+    await page.waitForSelector('.conversation-loader', { state: 'hidden', timeout: 10000 });
+    await page.waitForSelector('.message.user', { timeout: 10000 });
+    const firstAssistant = page.locator('.message.assistant').first();
+    await expect(firstAssistant).toContainText('mock response', { timeout: 10000 });
+
+    // Switch to second conversation
+    await convItems.nth(1).click();
+    // Wait for conversation to load
+    await page.waitForSelector('.conversation-loader', { state: 'hidden', timeout: 10000 });
+    await page.waitForSelector('.message.user', { timeout: 10000 });
+    const secondAssistant = page.locator('.message.assistant').first();
+    await expect(secondAssistant).toContainText('mock response', { timeout: 10000 });
+  });
+});

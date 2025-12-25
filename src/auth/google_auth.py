@@ -37,10 +37,12 @@ def verify_google_id_token(id_token: str) -> dict[str, Any]:
     logger.debug("Verifying Google ID token")
     # Verify token with Google's tokeninfo endpoint
     try:
+        from src.config import Config
+
         response = requests.get(
             GOOGLE_TOKENINFO_URL,
             params={"id_token": id_token},
-            timeout=10,
+            timeout=Config.GOOGLE_AUTH_TIMEOUT,
         )
 
         if response.status_code != 200:

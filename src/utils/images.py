@@ -7,13 +7,10 @@ from typing import Any
 
 from PIL import Image
 
+from src.config import Config
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-# Thumbnail dimensions
-THUMBNAIL_MAX_SIZE = (400, 400)
-THUMBNAIL_QUALITY = 85
 
 # MIME type to file extension mapping
 MIME_TYPE_TO_EXT: dict[str, str] = {
@@ -25,18 +22,21 @@ MIME_TYPE_TO_EXT: dict[str, str] = {
 
 
 def generate_thumbnail(
-    image_data: str, mime_type: str, max_size: tuple[int, int] = THUMBNAIL_MAX_SIZE
+    image_data: str, mime_type: str, max_size: tuple[int, int] | None = None
 ) -> str | None:
     """Generate a thumbnail from base64-encoded image data.
 
     Args:
         image_data: Base64-encoded image data
         mime_type: MIME type of the image (e.g., 'image/jpeg')
-        max_size: Maximum (width, height) for the thumbnail
+        max_size: Maximum (width, height) for the thumbnail (defaults to Config.THUMBNAIL_MAX_SIZE)
 
     Returns:
         Base64-encoded thumbnail data, or None if generation fails
     """
+    if max_size is None:
+        max_size = Config.THUMBNAIL_MAX_SIZE
+
     if not mime_type.startswith("image/"):
         return None
 
@@ -67,12 +67,12 @@ def generate_thumbnail(
         elif mime_type == "image/gif":
             img.save(output, format="GIF")
         elif mime_type == "image/webp":
-            img.save(output, format="WEBP", quality=THUMBNAIL_QUALITY)
+            img.save(output, format="WEBP", quality=Config.THUMBNAIL_QUALITY)
         else:
             # Default to JPEG
             if img.mode != "RGB":
                 img = img.convert("RGB")
-            img.save(output, format="JPEG", quality=THUMBNAIL_QUALITY, optimize=True)
+            img.save(output, format="JPEG", quality=Config.THUMBNAIL_QUALITY, optimize=True)
 
         # Return base64-encoded thumbnail
         output.seek(0)
