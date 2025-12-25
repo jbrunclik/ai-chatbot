@@ -30,7 +30,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'cd .. && .venv/bin/python tests/e2e-server.py',
+    // Use .venv/bin/python if available, otherwise fall back to system python (for CI)
+    command: 'cd .. && if [ -f .venv/bin/python ]; then .venv/bin/python tests/e2e-server.py; else python tests/e2e-server.py; fi',
     url: 'http://localhost:8001',
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
