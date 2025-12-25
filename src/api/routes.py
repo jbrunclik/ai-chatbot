@@ -1106,6 +1106,75 @@ def get_version() -> dict[str, str | None]:
 
 
 # ============================================================================
+# Health Check Routes
+# ============================================================================
+
+
+@api.route("/health", methods=["GET"])
+def health_check() -> tuple[dict[str, str | None], int]:
+    """Liveness probe - checks if the application process is running.
+
+    This endpoint should NOT check external dependencies (database, APIs).
+    It only verifies the Flask application is responding to requests.
+
+    Use /api/ready for readiness checks that verify dependencies.
+
+    Returns:
+        200: Application is alive and responding
+    """
+    from flask import current_app
+
+    return {
+        "status": "ok",
+        "version": current_app.config.get("APP_VERSION"),
+    }, 200
+
+
+@api.route("/ready", methods=["GET"])
+def readiness_check() -> tuple[dict[str, Any], int]:
+    """Readiness probe - checks if the application can serve traffic.
+
+    Verifies that all dependencies (database) are accessible.
+    Use this for load balancer health checks that should remove
+    unhealthy instances from the pool.
+
+    Returns:
+        200: Application is ready to serve traffic
+        503: Application is not ready (dependency failure)
+    """
+    from flask import current_app
+
+    from src.db.models import check_database_connectivity
+
+    checks: dict[str, dict[str, Any]] = {}
+    is_ready = True
+
+    # Check database connectivity
+    db_ok, db_error = check_database_connectivity()
+    checks["database"] = {
+        "status": "ok" if db_ok else "error",
+        "message": "Connected" if db_ok else db_error,
+    }
+    if not db_ok:
+        is_ready = False
+        logger.error("Readiness check failed: database", extra={"error": db_error})
+
+    response = {
+        "status": "ready" if is_ready else "not_ready",
+        "checks": checks,
+        "version": current_app.config.get("APP_VERSION"),
+    }
+
+    status_code = 200 if is_ready else 503
+    if is_ready:
+        logger.debug("Readiness check passed")
+    else:
+        logger.warning("Readiness check failed", extra={"checks": checks})
+
+    return response, status_code
+
+
+# ============================================================================
 # Image Routes
 # ============================================================================
 

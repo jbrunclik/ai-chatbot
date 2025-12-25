@@ -132,8 +132,8 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Frontend bundle analysis** - Analyze bundle size and identify optimization opportunities
 
 ### ⚙️ Configuration & Operations
-- [ ] **Environment variable validation** - Validate all required env vars at startup with clear error messages
-- [ ] **Add health check endpoint** - `/health` endpoint for monitoring and load balancer checks
+- [x] **Environment variable validation** - Validate all required env vars at startup with clear error messages
+- [x] **Add health check endpoint** - `/api/health` (liveness) and `/api/ready` (readiness) endpoints for monitoring and load balancer checks
 - [x] **Add request/response logging middleware** - Log all API requests and responses (with sensitive data redaction)
 - [x] **Add request ID tracking** - Include request IDs in logs and error responses for easier debugging
 - [x] **Add API response compression** - Enable gzip compression via nginx (see README deployment section)
