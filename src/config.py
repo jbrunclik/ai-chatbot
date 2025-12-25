@@ -191,6 +191,11 @@ class Config:
                     "JWT_SECRET_KEY must be set to a secure random value in production. "
                     'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
                 )
+            elif len(cls.JWT_SECRET_KEY) < 32:
+                errors.append(
+                    f"JWT_SECRET_KEY must be at least 32 characters for security (got {len(cls.JWT_SECRET_KEY)}). "
+                    'Generate a secure key with: python -c "import secrets; print(secrets.token_hex(32))"'
+                )
 
         # Validate numeric ranges
         if cls.PORT < 1 or cls.PORT > 65535:

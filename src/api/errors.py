@@ -136,6 +136,18 @@ def auth_invalid_error(message: str = "Invalid credentials") -> tuple[dict[str, 
     ), 401
 
 
+def auth_expired_error(message: str = "Token expired") -> tuple[dict[str, Any], int]:
+    """Create an expired authentication error response (401).
+
+    This is distinct from AUTH_INVALID to allow the frontend to prompt
+    re-authentication rather than treating it as a credentials error.
+    """
+    return create_error_response(
+        ErrorCode.AUTH_EXPIRED,
+        message,
+    ), 401
+
+
 def auth_forbidden_error(message: str = "Access denied") -> tuple[dict[str, Any], int]:
     """Create a forbidden error response (403)."""
     return create_error_response(

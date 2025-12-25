@@ -7,8 +7,11 @@ import jwt
 import pytest
 
 from src.auth.jwt_auth import (
+    TokenResult,
+    TokenStatus,
     create_token,
     decode_token,
+    decode_token_with_status,
     get_token_from_request,
 )
 from src.config import Config
@@ -197,3 +200,95 @@ class TestGetTokenFromRequest:
 
         token = get_token_from_request(mock_request)
         assert token is None  # 'bearer' != 'Bearer'
+
+
+class TestDecodeTokenWithStatus:
+    """Tests for decode_token_with_status function."""
+
+    def test_returns_valid_status_for_valid_token(self, mock_user: MagicMock) -> None:
+        """Valid token should return VALID status with payload."""
+        token = create_token(mock_user)
+        result = decode_token_with_status(token)
+
+        assert result.status == TokenStatus.VALID
+        assert result.payload is not None
+        assert result.payload["sub"] == mock_user.id
+        assert result.payload["email"] == mock_user.email
+        assert result.error is None
+
+    def test_returns_expired_status_for_expired_token(self, mock_user: MagicMock) -> None:
+        """Expired token should return EXPIRED status with error message."""
+        payload = {
+            "sub": mock_user.id,
+            "email": mock_user.email,
+            "name": mock_user.name,
+            "exp": datetime.now(UTC) - timedelta(hours=1),
+            "iat": datetime.now(UTC) - timedelta(hours=2),
+        }
+        expired_token = jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM)
+
+        result = decode_token_with_status(expired_token)
+
+        assert result.status == TokenStatus.EXPIRED
+        assert result.payload is None
+        assert result.error is not None
+        assert "expired" in result.error.lower()
+
+    def test_returns_invalid_status_for_malformed_token(self) -> None:
+        """Malformed token should return INVALID status."""
+        result = decode_token_with_status("invalid.token.here")
+
+        assert result.status == TokenStatus.INVALID
+        assert result.payload is None
+        assert result.error is not None
+
+    def test_returns_invalid_status_for_wrong_secret(self, mock_user: MagicMock) -> None:
+        """Token signed with wrong secret should return INVALID status."""
+        payload = {
+            "sub": mock_user.id,
+            "email": mock_user.email,
+            "exp": datetime.now(UTC) + timedelta(hours=1),
+            "iat": datetime.now(UTC),
+        }
+        wrong_token = jwt.encode(payload, "wrong-secret-key", algorithm="HS256")
+
+        result = decode_token_with_status(wrong_token)
+
+        assert result.status == TokenStatus.INVALID
+        assert result.payload is None
+
+    def test_returns_invalid_status_for_empty_string(self) -> None:
+        """Empty string should return INVALID status."""
+        result = decode_token_with_status("")
+
+        assert result.status == TokenStatus.INVALID
+        assert result.payload is None
+
+
+class TestTokenResult:
+    """Tests for TokenResult dataclass."""
+
+    def test_valid_result(self) -> None:
+        """Should create valid result with payload."""
+        payload = {"sub": "user-123", "email": "test@example.com"}
+        result = TokenResult(status=TokenStatus.VALID, payload=payload)
+
+        assert result.status == TokenStatus.VALID
+        assert result.payload == payload
+        assert result.error is None
+
+    def test_expired_result(self) -> None:
+        """Should create expired result with error."""
+        result = TokenResult(status=TokenStatus.EXPIRED, error="Token has expired")
+
+        assert result.status == TokenStatus.EXPIRED
+        assert result.payload is None
+        assert result.error == "Token has expired"
+
+    def test_invalid_result(self) -> None:
+        """Should create invalid result with error."""
+        result = TokenResult(status=TokenStatus.INVALID, error="Invalid signature")
+
+        assert result.status == TokenStatus.INVALID
+        assert result.payload is None
+        assert result.error == "Invalid signature"

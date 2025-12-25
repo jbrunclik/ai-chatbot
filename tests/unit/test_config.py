@@ -175,6 +175,28 @@ class TestConfigValidation:
             errors = Config.validate()
             assert any("LOG_LEVEL" in e for e in errors)
 
+    def test_short_jwt_secret_in_production(self) -> None:
+        """Should reject JWT secret shorter than 32 characters in production."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "production",
+                "GEMINI_API_KEY": "test-key",
+                "GOOGLE_CLIENT_ID": "test-client-id",
+                "ALLOWED_EMAILS": "test@example.com",
+                "JWT_SECRET_KEY": "too-short-key",  # 13 characters
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("JWT_SECRET_KEY" in e and "32 characters" in e for e in errors)
+
     def test_valid_config_development(self) -> None:
         """Should pass validation with valid development config."""
         with patch.dict(
@@ -206,7 +228,8 @@ class TestConfigValidation:
                 "GEMINI_API_KEY": "test-key",
                 "GOOGLE_CLIENT_ID": "test-client-id",
                 "ALLOWED_EMAILS": "test@example.com",
-                "JWT_SECRET_KEY": "secure-production-key-12345",
+                # JWT secret must be at least 32 characters in production
+                "JWT_SECRET_KEY": "secure-production-key-1234567890123456",
                 "PORT": "8000",
                 "COST_CURRENCY": "CZK",
                 "LOG_LEVEL": "WARNING",

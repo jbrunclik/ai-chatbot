@@ -127,6 +127,24 @@ def me() -> dict[str, dict[str, str | None]]:
     }
 
 
+@auth.route("/refresh", methods=["POST"])
+@require_auth
+def refresh_token() -> dict[str, str]:
+    """Refresh the JWT token.
+
+    Returns a new token with extended expiration.
+    The old token remains valid until its original expiration.
+    """
+    user = get_current_user()
+    assert user is not None  # Guaranteed by @require_auth
+
+    logger.info("Token refresh requested", extra={"user_id": user.id})
+    token = create_token(user)
+    logger.info("Token refreshed successfully", extra={"user_id": user.id})
+
+    return {"token": token}
+
+
 # ============================================================================
 # Conversation Routes
 # ============================================================================
