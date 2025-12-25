@@ -1,4 +1,4 @@
-import { Marked } from 'marked';
+import { marked } from 'marked';
 import hljs from 'highlight.js/lib/core';
 
 // Import only the languages we need
@@ -56,10 +56,36 @@ hljs.registerLanguage('swift', swift);
 hljs.registerLanguage('kotlin', kotlin);
 hljs.registerLanguage('kt', kotlin);
 
-// Create configured marked instance
-const marked = new Marked({
+// Configure marked with custom renderer for tables
+marked.use({
   breaks: true,
   gfm: true,
+  renderer: {
+    // Wrap tables in scroll container for horizontal scrolling on mobile
+    table(token): string {
+      // Build table header
+      let headerHtml = '<thead><tr>';
+      for (const cell of token.header) {
+        const align = cell.align ? ` style="text-align:${cell.align}"` : '';
+        headerHtml += `<th${align}>${this.parser.parseInline(cell.tokens)}</th>`;
+      }
+      headerHtml += '</tr></thead>';
+
+      // Build table body
+      let bodyHtml = '<tbody>';
+      for (const row of token.rows) {
+        bodyHtml += '<tr>';
+        for (const cell of row) {
+          const align = cell.align ? ` style="text-align:${cell.align}"` : '';
+          bodyHtml += `<td${align}>${this.parser.parseInline(cell.tokens)}</td>`;
+        }
+        bodyHtml += '</tr>';
+      }
+      bodyHtml += '</tbody>';
+
+      return `<div class="message-content-scroll-wrapper"><table>${headerHtml}${bodyHtml}</table></div>`;
+    },
+  },
 });
 
 /**
