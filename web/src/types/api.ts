@@ -85,6 +85,7 @@ export type StreamEvent =
       sources?: Source[];
       generated_images?: GeneratedImage[];
       files?: FileMetadata[];
+      title?: string; // Auto-generated conversation title (only present for first message)
     }
   | { type: 'error'; message: string; code?: string; retryable?: boolean };
 
@@ -111,6 +112,7 @@ export interface ChatResponse {
   sources?: Source[];
   generated_images?: GeneratedImage[];
   created_at: string;
+  title?: string; // Auto-generated conversation title (only present for first message)
 }
 
 export interface ErrorResponse {

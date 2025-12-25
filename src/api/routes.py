@@ -556,21 +556,27 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
         return server_error("Failed to generate response. Please try again.")
 
     # Auto-generate title from first message if still default
+    generated_title: str | None = None
     if conv.title == "New Conversation":
         logger.debug(
             "Auto-generating conversation title",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        new_title = generate_title(message_text, clean_response)
-        db.update_conversation(conv_id, user.id, title=new_title)
+        generated_title = generate_title(message_text, clean_response)
+        db.update_conversation(conv_id, user.id, title=generated_title)
         logger.debug(
             "Conversation title generated",
-            extra={"user_id": user.id, "conversation_id": conv_id, "title": new_title},
+            extra={"user_id": user.id, "conversation_id": conv_id, "title": generated_title},
         )
 
-    # Build response
+    # Build response (include title if it was just generated)
     response_data = build_chat_response(
-        assistant_msg, clean_response, gen_image_files, sources, generated_images_meta
+        assistant_msg,
+        clean_response,
+        gen_image_files,
+        sources,
+        generated_images_meta,
+        conversation_title=generated_title,
     )
 
     return response_data, 200
@@ -848,21 +854,30 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
             )
 
             # Auto-generate title from first message if still default
+            generated_title: str | None = None
             if conv.title == "New Conversation":
                 logger.debug(
                     "Auto-generating conversation title from stream",
                     extra={"user_id": user.id, "conversation_id": conv_id},
                 )
-                new_title = generate_title(message_text, clean_content)
-                db.update_conversation(conv_id, user.id, title=new_title)
+                generated_title = generate_title(message_text, clean_content)
+                db.update_conversation(conv_id, user.id, title=generated_title)
                 logger.debug(
                     "Conversation title generated from stream",
-                    extra={"user_id": user.id, "conversation_id": conv_id, "title": new_title},
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "title": generated_title,
+                    },
                 )
 
-            # Build done event
+            # Build done event (include title if it was just generated)
             done_data = build_stream_done_event(
-                assistant_msg, gen_image_files, sources, generated_images_meta
+                assistant_msg,
+                gen_image_files,
+                sources,
+                generated_images_meta,
+                conversation_title=generated_title,
             )
 
             logger.info(
