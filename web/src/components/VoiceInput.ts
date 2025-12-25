@@ -3,6 +3,9 @@ import { MICROPHONE_ICON, STOP_ICON } from '../utils/icons';
 import { updateSendButtonState } from './MessageInput';
 import { toast } from './Toast';
 import { isTouchDevice } from '../gestures/swipe';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('voice');
 
 // Language display names
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -282,6 +285,7 @@ export function initVoiceInput(): void {
   currentLang = getSavedLanguage();
   recognition.lang = currentLang;
   voiceBtn.title = `Voice input (${getLanguageDisplayName(currentLang)})`;
+  log.info('Voice input initialized', { language: currentLang });
 
   // Track the position where we started inserting text
   let insertPosition = 0;
@@ -324,7 +328,7 @@ export function initVoiceInput(): void {
   };
 
   recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-    console.error('Speech recognition error:', event.error, event.message);
+    log.error('Speech recognition error', { error: event.error, message: event.message });
 
     // Handle specific errors
     switch (event.error) {
@@ -344,7 +348,7 @@ export function initVoiceInput(): void {
         // User or system aborted, no message needed
         break;
       default:
-        console.error('Unexpected speech recognition error:', event.error);
+        log.error('Unexpected speech recognition error', { error: event.error });
         toast.error('Speech recognition failed. Please try again.');
     }
 
@@ -400,7 +404,7 @@ export function initVoiceInput(): void {
         recognition?.start();
       } catch (error) {
         // Already started or other error
-        console.error('Failed to start recognition:', error);
+        log.error('Failed to start recognition', { error });
       }
     }
   };

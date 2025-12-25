@@ -12,6 +12,9 @@
 import { version } from '../api/client';
 import { useStore } from '../state/store';
 import { CLOSE_ICON, REFRESH_ICON } from '../utils/icons';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('version');
 
 // Constants
 const VERSION_CHECK_INTERVAL = 5 * 60 * 1000; // 5 minutes
@@ -146,6 +149,7 @@ async function checkForNewVersion(): Promise<void> {
 
     // Compare versions
     if (serverVersion !== store.appVersion) {
+      log.info('New version available', { current: store.appVersion, server: serverVersion });
       store.setNewVersionAvailable(true);
 
       // Store pending version for dismiss tracking
@@ -163,7 +167,7 @@ async function checkForNewVersion(): Promise<void> {
     }
   } catch (error) {
     // Silently ignore version check errors
-    console.debug('Version check failed:', error);
+    log.debug('Version check failed', { error });
   }
 }
 
@@ -211,6 +215,6 @@ if (typeof window !== 'undefined') {
   (window as Window & { __testVersionBanner?: () => void }).__testVersionBanner = () => {
     useStore.getState().setNewVersionAvailable(true);
     showVersionBanner();
-    console.log('Version banner shown for testing');
+    log.info('Version banner shown for testing');
   };
 }

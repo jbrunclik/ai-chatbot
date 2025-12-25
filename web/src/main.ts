@@ -2,6 +2,7 @@ import './styles/main.css';
 import 'highlight.js/styles/github-dark.css';
 
 import { useStore } from './state/store';
+import { createLogger } from './utils/logger';
 import { conversations, chat, models, config, costs, ApiError } from './api/client';
 import { initToast, toast } from './components/Toast';
 import { initModal, showConfirm } from './components/Modal';
@@ -49,6 +50,8 @@ import { enableScrollOnImageLoad, getThumbnailObserver, observeThumbnail, progra
 import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, SPARKLES_ICON, PLUS_ICON } from './utils/icons';
 import { DEFAULT_CONVERSATION_TITLE } from './types/api';
 import type { Conversation, Message } from './types/api';
+
+const log = createLogger('main');
 
 // App HTML template
 function renderAppShell(): string {
@@ -177,6 +180,7 @@ function renderAppShell(): string {
 
 // Initialize the application
 async function init(): Promise<void> {
+  log.info('Initializing application');
   const app = getElementById<HTMLDivElement>('app');
   if (!app) return;
 
@@ -224,7 +228,7 @@ async function init(): Promise<void> {
     try {
       await loadInitialData();
     } catch (error) {
-      console.error('Failed to load data after login:', error);
+      log.error('Failed to load data after login', { error });
       toast.error('Failed to load data. Please refresh the page.', {
         action: { label: 'Refresh', onClick: () => window.location.reload() },
       });
@@ -250,6 +254,7 @@ async function init(): Promise<void> {
 
 // Load initial data after authentication
 async function loadInitialData(): Promise<void> {
+  log.debug('Loading initial data');
   const store = useStore.getState();
   store.setLoading(true);
 
@@ -265,11 +270,12 @@ async function loadInitialData(): Promise<void> {
     store.setModels(modelsData.models, modelsData.default);
     store.setUploadConfig(uploadConfig);
 
+    log.info('Initial data loaded', { conversationCount: convList.length, modelCount: modelsData.models.length });
     renderConversationsList();
     renderUserInfo();
     renderModelDropdown();
   } catch (error) {
-    console.error('Failed to load initial data:', error);
+    log.error('Failed to load initial data', { error });
     toast.error('Failed to load data. Please refresh the page.', {
       action: { label: 'Refresh', onClick: () => window.location.reload() },
     });
@@ -306,6 +312,7 @@ async function updateConversationCost(convId: string | null): Promise<void> {
 
 // Switch to a conversation and update UI
 function switchToConversation(conv: Conversation): void {
+  log.debug('Switching to conversation', { conversationId: conv.id, title: conv.title });
   const store = useStore.getState();
   store.setCurrentConversation(conv);
   setActiveConversation(conv.id);
@@ -344,7 +351,7 @@ async function selectConversation(convId: string): Promise<void> {
     hideConversationLoader();
     switchToConversation(conv);
   } catch (error) {
-    console.error('Failed to load conversation:', error);
+    log.error('Failed to load conversation', { error, conversationId: convId });
     hideConversationLoader();
     toast.error('Failed to load conversation.', {
       action: { label: 'Retry', onClick: () => selectConversation(convId) },
@@ -361,6 +368,7 @@ function isTempConversation(convId: string): boolean {
 
 // Create a new conversation (local only - saved to DB on first message)
 function createConversation(): void {
+  log.debug('Creating new conversation');
   const store = useStore.getState();
 
   // Create a local-only conversation with a temp ID
@@ -424,7 +432,7 @@ async function deleteConversation(convId: string): Promise<void> {
     await conversations.delete(convId);
     removeConversationFromUI(convId);
   } catch (error) {
-    console.error('Failed to delete conversation:', error);
+    log.error('Failed to delete conversation', { error, conversationId: convId });
     toast.error('Failed to delete conversation. Please try again.');
   }
 }
@@ -453,6 +461,13 @@ async function sendMessage(): Promise<void> {
 
   if (!messageText && files.length === 0) return;
 
+  log.info('Sending message', {
+    conversationId: store.currentConversation?.id,
+    messageLength: messageText.length,
+    fileCount: files.length,
+    streaming: store.streamingEnabled,
+  });
+
   // Create local conversation if none selected
   if (!store.currentConversation) {
     createConversation();
@@ -475,7 +490,7 @@ async function sendMessage(): Promise<void> {
       setActiveConversation(persistedConv.id);
       conv = persistedConv;
     } catch (error) {
-      console.error('Failed to create conversation:', error);
+      log.error('Failed to create conversation', { error });
       toast.error('Failed to create conversation. Please try again.');
       return;
     }
@@ -526,7 +541,7 @@ async function sendMessage(): Promise<void> {
     // Clear draft on successful send
     useStore.getState().clearDraft();
   } catch (error) {
-    console.error('Failed to send message:', error);
+    log.error('Failed to send message', { error, conversationId: conv.id });
     hideLoadingIndicator();
 
     // Save draft for recovery
@@ -628,6 +643,7 @@ async function sendStreamingMessage(
         fullContent += event.text;
         updateStreamingMessage(messageEl, fullContent);
       } else if (event.type === 'done') {
+        log.info('Streaming complete', { conversationId: convId, messageId: event.id });
         finalizeStreamingMessage(messageEl, event.id, event.created_at, event.sources, event.generated_images, event.files);
 
         // Handle scroll-to-bottom for lazy-loaded images (same logic as batch mode)
@@ -673,7 +689,7 @@ async function sendStreamingMessage(
         // Update conversation cost
         await updateConversationCost(convId);
       } else if (event.type === 'error') {
-        console.error('Stream error:', event.message);
+        log.error('Stream error', { message: event.message, conversationId: convId });
         // Keep partial content if any was received
         if (fullContent.trim()) {
           // Mark message as incomplete but keep the content
@@ -699,7 +715,7 @@ async function sendStreamingMessage(
       }
     }
   } catch (error) {
-    console.error('Streaming failed:', error);
+    log.error('Streaming failed', { error, conversationId: convId });
 
     // Check if conversation is still current before showing errors
     const store = useStore.getState();
@@ -767,6 +783,7 @@ async function sendBatchMessage(
 
   try {
     const response = await chat.sendBatch(convId, message, files, forceTools);
+    log.info('Batch response received', { conversationId: convId, messageId: response.id });
 
     // Check if conversation is still current before updating UI
     const store = useStore.getState();
@@ -957,7 +974,7 @@ function setupEventListeners(): void {
         const { openCostHistory } = await import('./components/CostHistoryPopup');
         openCostHistory(history);
       } catch (error) {
-        console.error('Failed to load cost history:', error);
+        log.error('Failed to load cost history', { error });
         toast.error('Failed to load cost history.');
       }
     }
@@ -1033,7 +1050,7 @@ async function copyMessageContent(button: HTMLButtonElement): Promise<void> {
       button.classList.remove('copied');
     }, 2000);
   } catch (error) {
-    console.error('Failed to copy:', error);
+    log.error('Failed to copy to clipboard', { error });
     toast.error('Failed to copy to clipboard.');
   }
 }
@@ -1270,7 +1287,7 @@ async function downloadFile(messageId: string, fileIndex: number): Promise<void>
 
     URL.revokeObjectURL(url);
   } catch (error) {
-    console.error('Failed to download file:', error);
+    log.error('Failed to download file', { error, messageId, fileIndex });
     toast.error('Failed to download file.');
   }
 }

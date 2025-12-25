@@ -5,6 +5,9 @@ import { useStore } from '../state/store';
 import { DEFAULT_CONVERSATION_TITLE } from '../types/api';
 import type { Conversation } from '../types/api';
 import { costs } from '../api/client';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('sidebar');
 
 /**
  * Render the conversations list in the sidebar
@@ -108,7 +111,7 @@ export function renderUserInfo(): void {
     })
     .catch((error) => {
       // Ignore errors - cost display is optional, but log for debugging
-      console.warn('Failed to fetch monthly cost:', error);
+      log.warn('Failed to fetch monthly cost', { error });
     });
 }
 

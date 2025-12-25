@@ -1,6 +1,9 @@
 import { auth, ApiError } from '../api/client';
 import { useStore } from '../state/store';
 import { toast } from '../components/Toast';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('auth');
 
 let googleInitialized = false;
 let tokenRefreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -21,7 +24,7 @@ export async function initGoogleSignIn(): Promise<void> {
   // Get client ID from server
   const clientId = await auth.getClientId();
   if (!clientId) {
-    console.log('No Google Client ID - running in development mode');
+    log.info('No Google Client ID - running in development mode');
     return;
   }
 
@@ -46,7 +49,7 @@ export async function initGoogleSignIn(): Promise<void> {
 export function renderGoogleButton(container: HTMLElement): void {
   const clientId = useStore.getState().googleClientId;
   if (!clientId || !googleInitialized) {
-    console.log('Google Sign-In not available');
+    log.debug('Google Sign-In not available');
     return;
   }
 
@@ -78,7 +81,7 @@ async function handleGoogleCredential(
     // Trigger app reload/init
     window.dispatchEvent(new CustomEvent('auth:login'));
   } catch (error) {
-    console.error('Google login failed:', error);
+    log.error('Google login failed', { error });
     toast.error('Login failed. Please try again.');
     window.dispatchEvent(
       new CustomEvent('auth:error', { detail: { error } })
@@ -98,6 +101,7 @@ export async function checkAuth(): Promise<boolean> {
 
   try {
     const user = await auth.me();
+    log.info('User authenticated', { userId: user.id, email: user.email });
     store.setUser(user);
 
     // Schedule automatic token refresh for existing valid token
@@ -125,6 +129,7 @@ export async function checkAuth(): Promise<boolean> {
  * Logout user
  */
 export function logout(): void {
+  log.info('User logging out');
   const store = useStore.getState();
 
   // Cancel any scheduled token refresh
@@ -193,7 +198,7 @@ export function scheduleTokenRefresh(token: string): void {
 
   const payload = decodeJwtPayload(token);
   if (!payload?.exp) {
-    console.warn('Could not decode token expiration, skipping auto-refresh');
+    log.warn('Could not decode token expiration, skipping auto-refresh');
     return;
   }
 
@@ -206,12 +211,12 @@ export function scheduleTokenRefresh(token: string): void {
 
   if (refreshIn <= 0) {
     // Token expires in less than 1 hour, refresh immediately
-    console.log('Token expiring soon, refreshing immediately');
+    log.info('Token expiring soon, refreshing immediately');
     performTokenRefresh();
     return;
   }
 
-  console.log(`Scheduling token refresh in ${Math.round(refreshIn / 1000 / 60)} minutes`);
+  log.debug('Scheduling token refresh', { refreshInMinutes: Math.round(refreshIn / 1000 / 60) });
   tokenRefreshTimeoutId = setTimeout(performTokenRefresh, refreshIn);
 }
 
@@ -232,20 +237,20 @@ async function performTokenRefresh(): Promise<void> {
   const store = useStore.getState();
 
   if (!store.token) {
-    console.log('No token to refresh');
+    log.debug('No token to refresh');
     return;
   }
 
   try {
-    console.log('Refreshing token...');
+    log.debug('Refreshing token');
     const newToken = await auth.refreshToken();
     store.setToken(newToken);
-    console.log('Token refreshed successfully');
+    log.info('Token refreshed successfully');
 
     // Schedule next refresh
     scheduleTokenRefresh(newToken);
   } catch (error) {
-    console.error('Failed to refresh token:', error);
+    log.error('Failed to refresh token', { error });
 
     // If refresh fails due to expired token, trigger re-auth
     if (error instanceof ApiError && error.isTokenExpired) {

@@ -1,6 +1,9 @@
 import { getElementById } from '../utils/dom';
 import { files } from '../api/client';
 import { toast } from './Toast';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('lightbox');
 
 let currentBlobUrl: string | null = null;
 
@@ -67,7 +70,7 @@ export async function openLightbox(
     img.src = currentBlobUrl;
     lightbox.classList.remove('loading');
   } catch (error) {
-    console.error('Failed to load image:', error);
+    log.error('Failed to load image', { error, messageId, fileIndex });
     toast.error('Failed to load image.');
     closeLightbox();
   }

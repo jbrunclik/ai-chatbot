@@ -1,6 +1,9 @@
 import { files } from '../api/client';
 import { getElementById, scrollToBottom, isScrolledToBottom } from './dom';
 import { checkScrollButtonVisibility } from '../components/ScrollToBottom';
+import { createLogger } from './logger';
+
+const log = createLogger('thumbnails');
 
 const MAX_CONCURRENT_FETCHES = 6;
 
@@ -790,7 +793,7 @@ export function createThumbnailObserver(): IntersectionObserver {
                   mutationObserver.observe(parent, { childList: true, subtree: true });
                 }
               } catch (error) {
-                console.error('Failed to load thumbnail:', error);
+                log.error('Failed to load thumbnail', { error });
                 // Remove loading state from wrapper (if exists) or image
                 const wrapper = img.closest('.message-image-wrapper');
                 if (wrapper) {

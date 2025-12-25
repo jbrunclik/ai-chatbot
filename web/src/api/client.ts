@@ -27,6 +27,9 @@ import {
   STORAGE_KEY_APP_STATE,
   STORAGE_KEY_LEGACY_TOKEN,
 } from '../config';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('api');
 
 /**
  * Extended API error with additional metadata for error handling.
@@ -178,6 +181,10 @@ async function request<T>(
   // Unsafe methods: POST (creates new resources), PUT with different data
   const isRetryable = retry;
   let lastError: ApiError | null = null;
+  const method = fetchOptions.method || 'GET';
+
+  log.debug('API request', { method, url });
+  const startTime = performance.now();
 
   for (let attempt = 0; attempt <= (isRetryable ? maxRetries : 0); attempt++) {
     try {
@@ -201,6 +208,9 @@ async function request<T>(
       if (!response.ok) {
         throw parseErrorResponse(data, response.status);
       }
+
+      const duration = Math.round(performance.now() - startTime);
+      log.debug('API response', { method, url, status: response.status, durationMs: duration });
 
       return data as T;
     } catch (error) {
@@ -235,13 +245,14 @@ async function request<T>(
       // Only retry if the error is retryable and we have attempts left
       if (isRetryable && lastError.retryable && attempt < maxRetries) {
         const delay = calculateRetryDelay(attempt);
-        // Debug logging for retries (only in development)
-        if (process.env.NODE_ENV === 'development') {
-          console.debug(
-            `[API] Retry ${attempt + 1}/${maxRetries} for ${url} after ${delay}ms`,
-            { error: lastError.message, code: lastError.code }
-          );
-        }
+        log.debug('Retrying request', {
+          attempt: attempt + 1,
+          maxRetries,
+          url,
+          delayMs: delay,
+          error: lastError.message,
+          code: lastError.code,
+        });
         await sleep(delay);
         continue;
       }
@@ -363,6 +374,7 @@ export const chat = {
     files?: FileUpload[],
     forceTools?: string[]
   ): AsyncGenerator<StreamEvent> {
+    log.debug('Starting stream', { conversationId, messageLength: message.length, fileCount: files?.length ?? 0 });
     const token = getToken();
 
     // Add timeout to initial fetch request
