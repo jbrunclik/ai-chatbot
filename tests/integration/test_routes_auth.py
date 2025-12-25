@@ -187,7 +187,7 @@ class TestAuthRefreshRoute:
 
         exp_time = datetime.fromtimestamp(decoded["exp"], tz=UTC)
         now = datetime.now(UTC)
-        expected_exp = now + timedelta(hours=Config.JWT_EXPIRATION_HOURS)
+        expected_exp = now + timedelta(seconds=Config.JWT_EXPIRATION_SECONDS)
 
         # Allow 60 second tolerance for test execution time
         assert abs((exp_time - expected_exp).total_seconds()) < 60

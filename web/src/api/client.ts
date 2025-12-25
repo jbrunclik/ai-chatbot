@@ -15,20 +15,18 @@ import type {
   User,
   VersionResponse,
 } from '../types/api';
-
-// Timeout constants
-const DEFAULT_TIMEOUT = 30000;    // 30 seconds for simple requests
-const CHAT_TIMEOUT = 300000;      // 5 minutes for chat (thinking + tools + response)
-const STREAM_READ_TIMEOUT = 60000; // 60 seconds per-read timeout for streaming
-                                   // (backend sends keepalives every 15s, so 60s is generous)
-
-// Retry configuration
-const DEFAULT_MAX_RETRIES = 3;
-const INITIAL_RETRY_DELAY = 1000;
-const MAX_RETRY_DELAY = 10000;
-
-// HTTP status codes that are safe to retry (for idempotent operations)
-const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
+import {
+  API_DEFAULT_TIMEOUT_MS,
+  API_CHAT_TIMEOUT_MS,
+  API_STREAM_READ_TIMEOUT_MS,
+  API_MAX_RETRIES,
+  API_RETRY_INITIAL_DELAY_MS,
+  API_RETRY_MAX_DELAY_MS,
+  API_RETRY_JITTER_FACTOR,
+  API_RETRYABLE_STATUS_CODES,
+  STORAGE_KEY_APP_STATE,
+  STORAGE_KEY_LEGACY_TOKEN,
+} from '../config';
 
 /**
  * Extended API error with additional metadata for error handling.
@@ -63,7 +61,7 @@ class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
     this.code = options.code || 'UNKNOWN';
-    this.retryable = options.retryable ?? RETRYABLE_STATUS_CODES.includes(status);
+    this.retryable = options.retryable ?? API_RETRYABLE_STATUS_CODES.includes(status);
     this.isTimeout = options.isTimeout ?? false;
     this.isNetworkError = options.isNetworkError ?? false;
     // Auth error detection based on error codes
@@ -109,11 +107,11 @@ function createTimeoutSignal(timeoutMs: number): AbortSignal {
 function calculateRetryDelay(attempt: number): number {
   // Exponential backoff: delay * 2^attempt
   const delay = Math.min(
-    INITIAL_RETRY_DELAY * Math.pow(2, attempt),
-    MAX_RETRY_DELAY
+    API_RETRY_INITIAL_DELAY_MS * Math.pow(2, attempt),
+    API_RETRY_MAX_DELAY_MS
   );
-  // Add jitter (±25%) to prevent thundering herd
-  const jitter = delay * 0.25 * (Math.random() * 2 - 1);
+  // Add jitter to prevent thundering herd
+  const jitter = delay * API_RETRY_JITTER_FACTOR * (Math.random() * 2 - 1);
   return Math.round(delay + jitter);
 }
 
@@ -126,7 +124,7 @@ function sleep(ms: number): Promise<void> {
 
 function getToken(): string | null {
   // Try Zustand persisted store first
-  const stored = localStorage.getItem('ai-chatbot-storage');
+  const stored = localStorage.getItem(STORAGE_KEY_APP_STATE);
   if (stored) {
     try {
       const parsed = JSON.parse(stored);
@@ -138,7 +136,7 @@ function getToken(): string | null {
     }
   }
   // Fallback to legacy direct token storage
-  return localStorage.getItem('token');
+  return localStorage.getItem(STORAGE_KEY_LEGACY_TOKEN);
 }
 
 interface RequestOptions extends RequestInit {
@@ -158,9 +156,9 @@ async function request<T>(
   options: RequestOptions = {}
 ): Promise<T> {
   const {
-    timeout = DEFAULT_TIMEOUT,
+    timeout = API_DEFAULT_TIMEOUT_MS,
     retry = false,
-    maxRetries = DEFAULT_MAX_RETRIES,
+    maxRetries = API_MAX_RETRIES,
     ...fetchOptions
   } = options;
 
@@ -349,7 +347,7 @@ export const chat = {
       `/api/conversations/${conversationId}/chat/batch`,
       {
         method: 'POST',
-        timeout: CHAT_TIMEOUT,
+        timeout: API_CHAT_TIMEOUT_MS,
         body: JSON.stringify({
           message,
           files,
@@ -369,7 +367,7 @@ export const chat = {
 
     // Add timeout to initial fetch request
     const controller = new AbortController();
-    const fetchTimeoutId = setTimeout(() => controller.abort(), CHAT_TIMEOUT);
+    const fetchTimeoutId = setTimeout(() => controller.abort(), API_CHAT_TIMEOUT_MS);
 
     let response: Response;
     try {
@@ -438,7 +436,7 @@ export const chat = {
               { code: 'TIMEOUT', retryable: false, isTimeout: true }
             ));
           }
-        }, STREAM_READ_TIMEOUT);
+        }, API_STREAM_READ_TIMEOUT_MS);
 
         reader.read().then(
           (result) => {
