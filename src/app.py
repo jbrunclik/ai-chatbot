@@ -77,8 +77,14 @@ def create_app() -> Flask:
     vite_manifest: dict[str, dict[str, str | list[str]]] = {}
     manifest_path = Path(app.static_folder or "static") / "assets" / ".vite" / "manifest.json"
     if manifest_path.exists():
-        with open(manifest_path) as f:
-            vite_manifest = json.load(f)
+        try:
+            with open(manifest_path) as f:
+                vite_manifest = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(
+                "Failed to load Vite manifest",
+                extra={"path": str(manifest_path), "error": str(e)},
+            )
 
     # Extract app version from manifest (JS bundle hash)
     app_version: str | None = None

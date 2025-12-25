@@ -284,6 +284,18 @@ def main() -> None:
                 conn.commit()
             return {"status": "reset"}, 200
 
+        @test_bp.route("/test/simulate-error", methods=["POST"])
+        def simulate_error() -> tuple[dict[str, Any], int]:
+            """Simulate an error for testing error UI."""
+            from src.api.errors import server_error
+            return server_error("Simulated server error for testing")
+
+        @test_bp.route("/test/simulate-timeout", methods=["POST"])
+        def simulate_timeout() -> tuple[dict[str, Any], int]:
+            """Simulate a timeout for testing error UI."""
+            time.sleep(10)  # Delay long enough to trigger frontend timeout
+            return {"status": "ok"}, 200
+
         app.register_blueprint(test_bp)
 
         print("Starting E2E test server on http://localhost:8001")

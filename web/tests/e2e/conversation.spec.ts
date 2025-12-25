@@ -173,15 +173,17 @@ test.describe('Conversation deletion', () => {
   });
 
   test('clicking delete removes conversation', async ({ page }) => {
-    // Setup dialog handler before clicking delete
-    page.on('dialog', (dialog) => dialog.accept());
-
     // Hover to reveal delete button, then click
     const convItem = page.locator('.conversation-item-wrapper').first();
     await convItem.hover();
 
     const deleteBtn = convItem.locator('.conversation-delete');
     await deleteBtn.click();
+
+    // Wait for custom modal to appear and click confirm (Delete button)
+    const modal = page.locator('.modal-container:not(.modal-hidden)');
+    await expect(modal).toBeVisible();
+    await modal.locator('.modal-confirm').click();
 
     // Conversation should be removed
     const convItems = page.locator('.conversation-item-wrapper');
@@ -193,15 +195,17 @@ test.describe('Conversation deletion', () => {
   });
 
   test('can cancel deletion', async ({ page }) => {
-    // Setup dialog handler to dismiss
-    page.on('dialog', (dialog) => dialog.dismiss());
-
     // Hover to reveal delete button, then click
     const convItem = page.locator('.conversation-item-wrapper').first();
     await convItem.hover();
 
     const deleteBtn = convItem.locator('.conversation-delete');
     await deleteBtn.click();
+
+    // Wait for custom modal to appear and click cancel
+    const modal = page.locator('.modal-container:not(.modal-hidden)');
+    await expect(modal).toBeVisible();
+    await modal.locator('.modal-cancel').click();
 
     // Conversation should still be there
     const convItems = page.locator('.conversation-item-wrapper');

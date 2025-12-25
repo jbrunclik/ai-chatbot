@@ -1,6 +1,7 @@
 import { getElementById } from '../utils/dom';
 import { useStore } from '../state/store';
 import { renderFilePreview, updateSendButtonState } from './MessageInput';
+import { toast } from './Toast';
 import type { FileUpload } from '../types/api';
 
 /**
@@ -66,7 +67,6 @@ export function initFileUpload(): void {
 
 /**
  * Add files to pending upload queue
- * TODO: Replace alert() with custom modal dialogs
  */
 async function addFilesToPending(files: File[]): Promise<void> {
   const store = useStore.getState();
@@ -75,20 +75,20 @@ async function addFilesToPending(files: File[]): Promise<void> {
   for (const file of files) {
     // Check total file count
     if (pendingFiles.length >= uploadConfig.maxFilesPerMessage) {
-      alert(`Maximum ${uploadConfig.maxFilesPerMessage} files per message`);
+      toast.warning(`Maximum ${uploadConfig.maxFilesPerMessage} files per message`);
       break;
     }
 
     // Check file type
     if (!uploadConfig.allowedFileTypes.includes(file.type)) {
-      alert(`File type '${file.type}' is not allowed`);
+      toast.warning(`File type '${file.type || 'unknown'}' is not allowed`);
       continue;
     }
 
     // Check file size
     if (file.size > uploadConfig.maxFileSize) {
       const maxMB = uploadConfig.maxFileSize / (1024 * 1024);
-      alert(`File '${file.name}' exceeds ${maxMB}MB limit`);
+      toast.warning(`File '${file.name}' exceeds ${maxMB}MB limit`);
       continue;
     }
 
@@ -107,7 +107,7 @@ async function addFilesToPending(files: File[]): Promise<void> {
       store.addPendingFile(fileUpload);
     } catch (error) {
       console.error('Failed to read file:', error);
-      alert(`Failed to read file '${file.name}'`);
+      toast.error(`Failed to read file '${file.name}'`);
     }
   }
 

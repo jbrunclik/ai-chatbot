@@ -151,7 +151,8 @@ test.describe('Visual: Mobile Interactions', () => {
     await page.waitForSelector('.sidebar-overlay.visible');
     await page.waitForTimeout(300);
 
-    await expect(page.locator('#conversations-list')).toHaveScreenshot(
+    // Screenshot the sidebar content area to show empty state message
+    await expect(page.locator('.sidebar')).toHaveScreenshot(
       'mobile-conversations-empty.png'
     );
   });

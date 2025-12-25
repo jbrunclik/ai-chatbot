@@ -33,6 +33,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 - Modern dark theme, mobile-first responsive design
 - **Voice input**: Speech-to-text using Web Speech API (Chrome, Safari), with language selection
 - **Touch gestures**: Swipe left on conversations to delete, swipe from left edge to open sidebar
+- **Error handling**: Toast notifications, retry on network errors, draft message preservation
 - iOS Safari and PWA compatible
 - Local development mode (no auth required)
 
@@ -152,9 +153,9 @@ The project includes comprehensive test suites for both backend and frontend:
 
 ```bash
 make test           # Run all backend tests
-make test-unit      # Run unit tests only (135 tests)
-make test-integration  # Run integration tests only (95 tests)
-make test-cov       # Run with coverage report (72% coverage)
+make test-unit      # Run unit tests only
+make test-integration  # Run integration tests only
+make test-cov       # Run with coverage report
 make test-all       # Run all tests (backend + frontend)
 ```
 
@@ -169,16 +170,16 @@ Tests are organized in `tests/`:
 
 ```bash
 cd web
-npm test            # Run Vitest unit/component tests (125 tests)
-npm run test:e2e    # Run Playwright E2E tests (42 tests × 2 browsers)
+npm test            # Run Vitest unit/component tests
+npm run test:e2e    # Run Playwright E2E tests
 npm run test:all    # Run all frontend tests
 ```
 
 Frontend tests are organized in `web/tests/`:
-- `web/tests/unit/` - Unit tests for API client, DOM utilities, Zustand store (101 tests)
-- `web/tests/component/` - Component tests with jsdom (24 tests)
-- `web/tests/e2e/` - End-to-end browser tests (42 tests per browser)
-- `web/tests/visual/` - Visual regression tests (18 tests per browser)
+- `web/tests/unit/` - Unit tests for API client, DOM utilities, Zustand store
+- `web/tests/component/` - Component tests with jsdom
+- `web/tests/e2e/` - End-to-end browser tests
+- `web/tests/visual/` - Visual regression tests
 
 E2E tests run against a mock Flask server (`tests/e2e-server.py`) that simulates LLM responses without external API calls.
 

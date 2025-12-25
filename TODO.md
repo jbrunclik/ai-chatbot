@@ -14,7 +14,7 @@ This file tracks planned features, improvements, and technical debt.
 ## Phase 2 - Streaming & Polish
 - [x] **Streaming responses** - Display tokens as they arrive from Gemini (with toggle)
 - [ ] **Show thinking/tool details** - Display model reasoning and tool execution behind a toggle
-- [ ] Improve error handling and user feedback
+- [x] **Improve error handling and user feedback** - Toast notifications, custom modals, retry logic, draft message preservation
 - [x] **Add loading states and animations** - Conversation loading spinner, thumbnail loading indicators
 - [x] Conversation delete functionality
 - [ ] Conversation rename functionality
@@ -68,17 +68,17 @@ This file tracks planned features, improvements, and technical debt.
 ### 🔴 Connection Resilience (Slow/Unreliable Networks)
 - [ ] **Save streaming responses on connection failure** - If SSE connection drops mid-stream, the assistant's partial response is lost (user message saved, assistant message not). Server should save responses incrementally or persist partial responses in a cleanup handler.
 - [ ] **Push title updates in streaming `done` event** - The `done` SSE event only contains `{id, created_at}`, not the auto-generated title. Client must make separate API call to fetch title, which can fail. Include title in `done` event.
-- [ ] **Add retry logic for failed API calls** - Frontend should automatically retry failed requests (conversations list, message send, title refresh) with exponential backoff.
+- [x] **Add retry logic for failed API calls** - Frontend automatically retries GET requests with exponential backoff. POST requests show toast with manual retry button.
 - [ ] **Detect and handle offline state** - Show offline indicator when network is unavailable. Queue messages locally and sync when connection returns.
 - [ ] **Handle partial file uploads** - Large file uploads can fail mid-transfer. Consider chunked uploads with resume capability, or at minimum show clear error and allow retry.
 - [ ] **Add connection quality indicator** - Show visual feedback when connection is slow (e.g., SSE keepalives arriving but no tokens for extended period).
 - [ ] **Handle stale JWT on reconnect** - If user's connection drops and reconnects after JWT expires, gracefully prompt re-auth instead of failing silently.
-- [ ] **Persist unsent messages locally** - If send fails, keep message in input field or local storage so user doesn't lose their text.
+- [x] **Persist unsent messages locally** - Draft messages preserved in store and restored on send failure.
 
 ### 🔴 Critical / High Priority
 - [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
-- [x] **Add backend test suite** - Created `tests/` directory with 230 tests (135 unit + 95 integration) covering auth, API routes, database, tools, and utilities. 72% code coverage.
-- [x] **Add frontend test suite** - Created `web/tests/` with Vitest (101 unit + 24 component tests) and Playwright (86 E2E + visual tests). Mock server for E2E tests in `tests/e2e-server.py`.
+- [x] **Add backend test suite** - Created `tests/` directory with unit and integration tests covering auth, API routes, database, tools, and utilities.
+- [x] **Add frontend test suite** - Created `web/tests/` with Vitest (unit/component) and Playwright (E2E/visual) tests. Mock server for E2E tests in `tests/e2e-server.py`.
 - [ ] **Catch specific exceptions** - Multiple bare `except Exception:` handlers in `chat_agent.py`, `routes.py`, and `images.py`. Catch specific exceptions instead.
 
 ### 🟠 Security
@@ -95,10 +95,10 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Store files and thumbnails outside DB** - Move file data and thumbnails to object storage (S3, MinIO, etc.) for better scalability and performance
 - [x] **Split JavaScript into modules** - Migrated to Vite + TypeScript with modular components in `web/src/`
 - [x] **Add structured logging** - Replace print statements with proper logging framework (Python logging module). Currently `images.py:69` uses `print()`.
-- [ ] **Error handling standardization** - Create consistent error response format across all API endpoints
-- [ ] **Frontend error boundaries** - Add error handling for failed API calls with retry logic. Also wrap `response.json()` in try-catch.
+- [x] **Error handling standardization** - Consistent error response format with ErrorCode enum, retryable flag, and structured responses across all API endpoints
+- [x] **Frontend error boundaries** - ApiError class with error categorization, retry logic for GET requests, toast notifications for all API errors
 - [x] **Remove inline onclick handlers** - Migrated to event delegation in TypeScript components
-- [ ] **Add request timeout handling** - Handle timeouts for long-running Gemini API calls gracefully
+- [x] **Add request timeout handling** - CHAT_TIMEOUT (5 min) for batch requests, DEFAULT_TIMEOUT (30s) for other requests. Streaming needs per-read timeout (TODO).
 - [x] **TypeScript migration** - Frontend migrated to TypeScript with strict mode
 - [ ] **Extract magic numbers and strings to constants** - Swipe thresholds, timeouts extracted to named constants in TypeScript
 - [ ] **Remove console.log statements** - Implement structured frontend logging (console statements remain for debugging)
@@ -119,7 +119,7 @@ This file tracks planned features, improvements, and technical debt.
 ### 🔵 Frontend Performance & UX
 - [ ] **Allow switching conversations without interrupting active requests/SSE** - Currently, switching to a different conversation kills any active streaming requests or SSE connections. Allow multiple conversations to have active requests simultaneously, so users can switch between conversations without losing progress on ongoing responses.
 - [ ] **iPad Safari keyboard bar gap** - When focusing input on iPad with external keyboard, the system keyboard accessory bar pushes content up, revealing a gap below the app. CSS cannot paint outside the viewport iOS reveals. Need to investigate workarounds.
-- [ ] **Replace native browser dialogs** - Replace `alert()`, `confirm()`, and `prompt()` with custom modal components for better UX
+- [x] **Replace native browser dialogs** - Custom Modal component (showAlert, showConfirm, showPrompt) replaces all native dialogs. Toast notifications for transient messages.
 - [x] **Frontend bundle optimization** - Migrated to Vite, bundles marked.js and highlight.js from npm
 - [ ] **Add service worker** - Implement service worker for offline support and better caching
 - [ ] **Add file upload progress** - Show upload progress indicator for large file uploads

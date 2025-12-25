@@ -65,7 +65,7 @@ def fetch_url(url: str) -> str:
     try:
         logger.debug("Fetching URL", extra={"url": url})
         with httpx.Client(
-            timeout=30.0,
+            timeout=float(Config.TOOL_TIMEOUT),
             follow_redirects=True,
             headers={
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"

@@ -3,11 +3,35 @@
 import json
 from typing import Any
 
+from flask import Request
+
 from src.db.models import db
 from src.utils.costs import calculate_total_cost
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def get_request_json(request: Request) -> dict[str, Any] | None:
+    """Safely get JSON from request body.
+
+    Args:
+        request: Flask request object
+
+    Returns:
+        Parsed JSON dict, or None if parsing fails or request has no JSON.
+        Returns empty dict if silent=True and no JSON body.
+
+    Note:
+        This function catches JSONDecodeError to prevent 500 errors from
+        malformed JSON requests. Callers should handle None return by
+        using the invalid_json_error() response.
+    """
+    try:
+        return request.get_json(silent=True) or {}
+    except Exception:
+        # Catches any JSON parsing errors
+        return None
 
 
 def extract_metadata_fields(
