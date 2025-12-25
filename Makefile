@@ -1,10 +1,18 @@
 .PHONY: help setup lint lint-fix run dev build test test-cov test-unit test-integration test-fe test-fe-unit test-fe-component test-fe-e2e test-fe-visual test-fe-visual-update test-fe-watch test-all clean deploy
 
 VENV := .venv
+# Use venv binaries if available, otherwise fall back to system commands (for CI)
+ifneq ($(wildcard $(VENV)/bin/python),)
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 RUFF := $(VENV)/bin/ruff
 MYPY := $(VENV)/bin/mypy
+else
+PYTHON := python
+PIP := pip
+RUFF := ruff
+MYPY := mypy
+endif
 NPM := npm
 
 help:
