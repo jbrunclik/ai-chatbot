@@ -61,7 +61,7 @@ ai-chatbot/
 │       ├── gestures/swipe.ts     # Touch handlers
 │       ├── utils/
 │       │   ├── dom.ts            # DOM helpers, escapeHtml
-│       │   ├── markdown.ts       # marked + highlight.js
+│       │   ├── markdown.ts       # marked + highlight.js, table scroll wrapper
 │       │   ├── thumbnails.ts     # Intersection Observer lazy loading
 │       │   └── icons.ts          # SVG icon constants
 │       └── styles/main.css       # Dark theme, responsive layout

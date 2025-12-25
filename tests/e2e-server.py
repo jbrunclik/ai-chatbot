@@ -44,6 +44,7 @@ MOCK_CONFIG = {
     "input_tokens": 100,
     "output_tokens": 50,
     "stream_delay_ms": 30,  # Delay between streamed tokens (fast for tests)
+    "custom_response": None,  # If set, use this instead of prefix + message
 }
 
 
@@ -74,8 +75,12 @@ def create_mock_llm() -> MagicMock:
                             user_message = part.get("text", "")
                             break
 
-        prefix = MOCK_CONFIG["response_prefix"]
-        response_text = f"{prefix}{user_message[:100]}"
+        # Use custom response if set, otherwise use prefix + message
+        if MOCK_CONFIG["custom_response"]:
+            response_text = MOCK_CONFIG["custom_response"]
+        else:
+            prefix = MOCK_CONFIG["response_prefix"]
+            response_text = f"{prefix}{user_message[:100]}"
 
         # Return a proper AIMessage that LangGraph can process
         input_tokens = MOCK_CONFIG["input_tokens"]
@@ -203,9 +208,12 @@ def create_mock_stream_chat() -> Any:
         force_tools: list[str] | None = None,
     ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]], None, None]:
         """Mock streaming that yields tokens word-by-word."""
-        # Build mock response
-        prefix = MOCK_CONFIG["response_prefix"]
-        response_text = f"{prefix}{message[:100]}"
+        # Use custom response if set, otherwise use prefix + message
+        if MOCK_CONFIG["custom_response"]:
+            response_text = MOCK_CONFIG["custom_response"]
+        else:
+            prefix = MOCK_CONFIG["response_prefix"]
+            response_text = f"{prefix}{message[:100]}"
 
         # Stream tokens word-by-word (simulates real LLM streaming)
         words = response_text.split()
@@ -295,6 +303,21 @@ def main() -> None:
             """Simulate a timeout for testing error UI."""
             time.sleep(10)  # Delay long enough to trigger frontend timeout
             return {"status": "ok"}, 200
+
+        @test_bp.route("/test/set-mock-response", methods=["POST"])
+        def set_mock_response() -> tuple[dict[str, str], int]:
+            """Set a custom mock response for testing specific content."""
+            from flask import request
+            data = request.get_json() or {}
+            response = data.get("response")
+            MOCK_CONFIG["custom_response"] = response
+            return {"status": "set", "response": response or "(default)"}, 200
+
+        @test_bp.route("/test/clear-mock-response", methods=["POST"])
+        def clear_mock_response() -> tuple[dict[str, str], int]:
+            """Clear custom mock response to restore default behavior."""
+            MOCK_CONFIG["custom_response"] = None
+            return {"status": "cleared"}, 200
 
         app.register_blueprint(test_bp)
 

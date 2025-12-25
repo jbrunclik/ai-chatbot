@@ -591,6 +591,8 @@ body {
 
 .message.user .message-content {
     background-color: var(--user-bg);
+    /* Prevent very short messages from wrapping character-by-character */
+    min-width: fit-content;
 }
 
 .message-content-wrapper {
@@ -880,6 +882,43 @@ body {
 
 .message-content a:hover {
     text-decoration: underline;
+}
+
+/* Tables - horizontal scroll for wide tables on mobile */
+.message-content table {
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.875rem;
+    width: 100%;
+    min-width: max-content;
+}
+
+.message-content th,
+.message-content td {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+}
+
+.message-content th {
+    background-color: var(--bg-tertiary);
+    font-weight: 600;
+}
+
+.message-content tr:nth-child(even) {
+    background-color: var(--bg-secondary);
+}
+
+/* Wrapper for horizontal scrolling of wide content (tables, code blocks) */
+.message-content-scroll-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 12px 0;
+}
+
+.message-content-scroll-wrapper > table,
+.message-content-scroll-wrapper > pre {
+    margin: 0;
 }
 
 /* Input Area */
