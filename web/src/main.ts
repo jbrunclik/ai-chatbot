@@ -2,7 +2,9 @@ import './styles/main.css';
 import 'highlight.js/styles/github-dark.css';
 
 import { useStore } from './state/store';
-import { conversations, chat, models, config, costs } from './api/client';
+import { conversations, chat, models, config, costs, ApiError } from './api/client';
+import { initToast, toast } from './components/Toast';
+import { initModal, showConfirm } from './components/Modal';
 import { initGoogleSignIn, renderGoogleButton, checkAuth, logout } from './auth/google';
 import {
   renderConversationsList,
@@ -182,6 +184,8 @@ async function init(): Promise<void> {
   app.innerHTML = renderAppShell();
 
   // Initialize components
+  initToast();
+  initModal();
   initMessageInput(sendMessage);
   initModelSelector();
   initFileUpload();
@@ -217,7 +221,14 @@ async function init(): Promise<void> {
   // Listen for auth events
   window.addEventListener('auth:login', async () => {
     hideLoginOverlay();
-    await loadInitialData();
+    try {
+      await loadInitialData();
+    } catch (error) {
+      console.error('Failed to load data after login:', error);
+      toast.error('Failed to load data. Please refresh the page.', {
+        action: { label: 'Refresh', onClick: () => window.location.reload() },
+      });
+    }
   });
 
   window.addEventListener('auth:logout', () => {
@@ -259,6 +270,9 @@ async function loadInitialData(): Promise<void> {
     renderModelDropdown();
   } catch (error) {
     console.error('Failed to load initial data:', error);
+    toast.error('Failed to load data. Please refresh the page.', {
+      action: { label: 'Refresh', onClick: () => window.location.reload() },
+    });
   } finally {
     store.setLoading(false);
   }
@@ -332,6 +346,9 @@ async function selectConversation(convId: string): Promise<void> {
   } catch (error) {
     console.error('Failed to load conversation:', error);
     hideConversationLoader();
+    toast.error('Failed to load conversation.', {
+      action: { label: 'Retry', onClick: () => selectConversation(convId) },
+    });
   } finally {
     store.setLoading(false);
   }
@@ -387,8 +404,15 @@ function removeConversationFromUI(convId: string): void {
 
 // Delete a conversation
 async function deleteConversation(convId: string): Promise<void> {
-  // TODO: Replace confirm() with custom modal
-  if (!confirm('Delete this conversation?')) return;
+  const confirmed = await showConfirm({
+    title: 'Delete Conversation',
+    message: 'Are you sure you want to delete this conversation? This cannot be undone.',
+    confirmLabel: 'Delete',
+    cancelLabel: 'Cancel',
+    danger: true,
+  });
+
+  if (!confirmed) return;
 
   // For temp conversations, just remove locally (no API call needed)
   if (isTempConversation(convId)) {
@@ -401,6 +425,7 @@ async function deleteConversation(convId: string): Promise<void> {
     removeConversationFromUI(convId);
   } catch (error) {
     console.error('Failed to delete conversation:', error);
+    toast.error('Failed to delete conversation. Please try again.');
   }
 }
 
@@ -408,10 +433,15 @@ async function deleteConversation(convId: string): Promise<void> {
 async function refreshConversationTitle(convId: string): Promise<void> {
   const store = useStore.getState();
   if (store.currentConversation?.title === DEFAULT_CONVERSATION_TITLE) {
-    const updatedConv = await conversations.get(convId);
-    store.updateConversation(convId, { title: updatedConv.title });
-    updateChatTitle(updatedConv.title);
-    renderConversationsList();
+    try {
+      const updatedConv = await conversations.get(convId);
+      store.updateConversation(convId, { title: updatedConv.title });
+      updateChatTitle(updatedConv.title);
+      renderConversationsList();
+    } catch (error) {
+      // Silently ignore title refresh failures - title will remain as "New Conversation"
+      console.warn('Failed to refresh conversation title:', error);
+    }
   }
 }
 
@@ -449,6 +479,7 @@ async function sendMessage(): Promise<void> {
       conv = persistedConv;
     } catch (error) {
       console.error('Failed to create conversation:', error);
+      toast.error('Failed to create conversation. Please try again.');
       return;
     }
   }
@@ -495,11 +526,63 @@ async function sendMessage(): Promise<void> {
     } else {
       await sendBatchMessage(conv.id, messageText, files, forceTools);
     }
+    // Clear draft on successful send
+    useStore.getState().clearDraft();
   } catch (error) {
     console.error('Failed to send message:', error);
     hideLoadingIndicator();
+
+    // Save draft for recovery
+    useStore.getState().setDraft(messageText, files);
+
+    // Show appropriate error toast
+    if (error instanceof ApiError) {
+      if (error.isTimeout) {
+        toast.error('Request timed out. Your message has been saved.', {
+          action: { label: 'Retry', onClick: () => retryFromDraft() },
+        });
+      } else if (error.isNetworkError) {
+        toast.error('Network error. Please check your connection.', {
+          action: { label: 'Retry', onClick: () => retryFromDraft() },
+        });
+      } else if (error.retryable) {
+        toast.error('Failed to send message. Please try again.', {
+          action: { label: 'Retry', onClick: () => retryFromDraft() },
+        });
+      } else {
+        toast.error(error.message || 'Failed to send message.');
+      }
+    } else if (error instanceof Error && error.name === 'AbortError') {
+      toast.warning('Request was cancelled.');
+    } else {
+      toast.error('An unexpected error occurred. Please try again.');
+    }
   } finally {
     setInputLoading(false);
+    focusMessageInput();
+  }
+}
+
+/**
+ * Retry sending message from saved draft.
+ */
+function retryFromDraft(): void {
+  const { draftMessage, draftFiles } = useStore.getState();
+  if (draftMessage || draftFiles.length > 0) {
+    // Restore draft to input
+    const textarea = getElementById<HTMLTextAreaElement>('message-input');
+    if (textarea && draftMessage) {
+      textarea.value = draftMessage;
+      // Trigger input event to update UI
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    // Restore files to pending files
+    draftFiles.forEach((file) => {
+      useStore.getState().addPendingFile(file);
+    });
+    // Clear draft after restoring
+    useStore.getState().clearDraft();
+    // Focus input
     focusMessageInput();
   }
 }
@@ -513,6 +596,7 @@ async function sendStreamingMessage(
 ): Promise<void> {
   const messageEl = addStreamingMessage();
   let fullContent = '';
+  let errorHandledViaEvent = false;
 
   try {
     for await (const event of chat.stream(convId, message, files, forceTools)) {
@@ -566,13 +650,59 @@ async function sendStreamingMessage(
         await updateConversationCost(convId);
       } else if (event.type === 'error') {
         console.error('Stream error:', event.message);
-        messageEl.remove();
+        // Keep partial content if any was received
+        if (fullContent.trim()) {
+          // Mark message as incomplete but keep the content
+          messageEl.classList.add('message-incomplete');
+        } else {
+          messageEl.remove();
+        }
+        // Show error toast with retry option
+        const errorEvent = event as { message?: string; code?: string; retryable?: boolean };
+        if (errorEvent.code === 'TIMEOUT') {
+          toast.error('Request timed out. Your message has been saved.', {
+            action: { label: 'Retry', onClick: () => retryFromDraft() },
+          });
+        } else if (errorEvent.retryable) {
+          toast.error(errorEvent.message || 'Failed to generate response.', {
+            action: { label: 'Retry', onClick: () => retryFromDraft() },
+          });
+        } else {
+          toast.error(errorEvent.message || 'Failed to generate response.');
+        }
+        // Mark that error was handled via event (don't re-show toast in catch block)
+        errorHandledViaEvent = true;
       }
     }
   } catch (error) {
     console.error('Streaming failed:', error);
-    messageEl.remove();
-    throw error;
+    // Keep partial content if any was received
+    if (fullContent.trim()) {
+      messageEl.classList.add('message-incomplete');
+    } else {
+      messageEl.remove();
+    }
+
+    // Handle errors that weren't already handled via error event
+    // This is a fallback for errors that occur before streaming starts
+    if (!errorHandledViaEvent) {
+      if (error instanceof ApiError) {
+        if (error.isTimeout) {
+          toast.error('Request timed out. Your message has been saved.', {
+            action: { label: 'Retry', onClick: () => retryFromDraft() },
+          });
+        } else if (error.retryable) {
+          toast.error(error.message || 'Failed to generate response.', {
+            action: { label: 'Retry', onClick: () => retryFromDraft() },
+          });
+        } else {
+          toast.error(error.message || 'Failed to generate response.');
+        }
+      } else {
+        // Re-throw non-ApiErrors to be handled by outer sendMessage catch
+        throw error;
+      }
+    }
   }
 }
 
@@ -754,6 +884,7 @@ function setupEventListeners(): void {
         openCostHistory(history);
       } catch (error) {
         console.error('Failed to load cost history:', error);
+        toast.error('Failed to load cost history.');
       }
     }
   });
@@ -829,6 +960,7 @@ async function copyMessageContent(button: HTMLButtonElement): Promise<void> {
     }, 2000);
   } catch (error) {
     console.error('Failed to copy:', error);
+    toast.error('Failed to copy to clipboard.');
   }
 }
 
@@ -1065,6 +1197,7 @@ async function downloadFile(messageId: string, fileIndex: number): Promise<void>
     URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Failed to download file:', error);
+    toast.error('Failed to download file.');
   }
 }
 

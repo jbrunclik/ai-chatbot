@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, subscribeWithSelector } from 'zustand/middleware';
 import type {
   Conversation,
   FileUpload,
@@ -7,6 +7,17 @@ import type {
   UploadConfig,
   User,
 } from '../types/api';
+
+/**
+ * Notification for toast messages
+ */
+export interface Notification {
+  id: string;
+  type: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+  action?: { label: string; onClick: () => void };
+  duration?: number; // 0 for persistent
+}
 
 interface AppState {
   // Auth
@@ -36,6 +47,13 @@ interface AppState {
   appVersion: string | null;
   newVersionAvailable: boolean;
   versionBannerDismissed: boolean;
+
+  // Notifications (toast messages)
+  notifications: Notification[];
+
+  // Draft message (for error recovery)
+  draftMessage: string;
+  draftFiles: FileUpload[];
 
   // Actions - Auth
   setToken: (token: string | null) => void;
@@ -71,6 +89,15 @@ interface AppState {
   setAppVersion: (version: string | null) => void;
   setNewVersionAvailable: (available: boolean) => void;
   dismissVersionBanner: () => void;
+
+  // Actions - Notifications
+  addNotification: (notification: Notification) => void;
+  dismissNotification: (id: string) => void;
+  clearNotifications: () => void;
+
+  // Actions - Draft
+  setDraft: (message: string, files: FileUpload[]) => void;
+  clearDraft: () => void;
 }
 
 const DEFAULT_UPLOAD_CONFIG: UploadConfig = {
@@ -90,7 +117,8 @@ const DEFAULT_UPLOAD_CONFIG: UploadConfig = {
 };
 
 export const useStore = create<AppState>()(
-  persist(
+  subscribeWithSelector(
+    persist(
     (set) => ({
       // Initial state
       token: null,
@@ -109,6 +137,9 @@ export const useStore = create<AppState>()(
       appVersion: null,
       newVersionAvailable: false,
       versionBannerDismissed: false,
+      notifications: [],
+      draftMessage: '',
+      draftFiles: [],
 
       // Auth actions
       setToken: (token) => set({ token }),
@@ -181,13 +212,32 @@ export const useStore = create<AppState>()(
       setAppVersion: (appVersion) => set({ appVersion }),
       setNewVersionAvailable: (newVersionAvailable) => set({ newVersionAvailable }),
       dismissVersionBanner: () => set({ versionBannerDismissed: true }),
+
+      // Notification actions
+      addNotification: (notification) =>
+        set((state) => ({
+          notifications: [...state.notifications, notification],
+        })),
+      dismissNotification: (id) =>
+        set((state) => ({
+          notifications: state.notifications.filter((n) => n.id !== id),
+        })),
+      clearNotifications: () => set({ notifications: [] }),
+
+      // Draft actions (for error recovery)
+      setDraft: (draftMessage, draftFiles) => set({ draftMessage, draftFiles }),
+      clearDraft: () => set({ draftMessage: '', draftFiles: [] }),
     }),
     {
       name: 'ai-chatbot-storage',
       partialize: (state) => ({
         token: state.token,
         streamingEnabled: state.streamingEnabled,
+        // Persist draft for crash recovery
+        draftMessage: state.draftMessage,
+        draftFiles: state.draftFiles,
       }),
     }
+    )
   )
 );

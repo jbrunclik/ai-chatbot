@@ -86,7 +86,7 @@ export type StreamEvent =
       generated_images?: GeneratedImage[];
       files?: FileMetadata[];
     }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; code?: string; retryable?: boolean };
 
 // API response types
 export interface AuthResponse {
@@ -114,7 +114,12 @@ export interface ChatResponse {
 }
 
 export interface ErrorResponse {
-  error: string;
+  error: string | {
+    code: string;
+    message: string;
+    retryable?: boolean;
+    details?: Record<string, unknown>;
+  };
 }
 
 export interface VersionResponse {

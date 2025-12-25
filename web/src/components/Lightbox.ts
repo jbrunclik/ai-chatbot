@@ -1,5 +1,6 @@
 import { getElementById } from '../utils/dom';
 import { files } from '../api/client';
+import { toast } from './Toast';
 
 let currentBlobUrl: string | null = null;
 
@@ -67,6 +68,7 @@ export async function openLightbox(
     lightbox.classList.remove('loading');
   } catch (error) {
     console.error('Failed to load image:', error);
+    toast.error('Failed to load image.');
     closeLightbox();
   }
 }

@@ -90,7 +90,10 @@ class TestGoogleAuthRoute:
 
         assert response.status_code == 403
         data = json.loads(response.data)
-        assert "not authorized" in data["error"].lower()
+        # Error can be string or structured object
+        error = data["error"]
+        error_message = error["message"] if isinstance(error, dict) else error
+        assert "not authorized" in error_message.lower()
 
 
 class TestAuthMeRoute:

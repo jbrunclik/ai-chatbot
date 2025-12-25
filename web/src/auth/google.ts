@@ -1,5 +1,6 @@
 import { auth } from '../api/client';
 import { useStore } from '../state/store';
+import { toast } from '../components/Toast';
 
 let googleInitialized = false;
 
@@ -69,6 +70,7 @@ async function handleGoogleCredential(
     window.dispatchEvent(new CustomEvent('auth:login'));
   } catch (error) {
     console.error('Google login failed:', error);
+    toast.error('Login failed. Please try again.');
     window.dispatchEvent(
       new CustomEvent('auth:error', { detail: { error } })
     );

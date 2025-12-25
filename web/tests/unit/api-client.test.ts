@@ -305,6 +305,143 @@ describe('API Client', () => {
 
         await expect(generator.next()).rejects.toThrow(ApiError);
       });
+
+      it('throws ApiError with TIMEOUT code when initial fetch is aborted', async () => {
+        // Test that AbortError from fetch is converted to ApiError with TIMEOUT code
+        global.fetch = vi.fn().mockImplementation(() => {
+          const error = new Error('The operation was aborted');
+          error.name = 'AbortError';
+          return Promise.reject(error);
+        });
+
+        const generator = chat.stream('conv-1', 'Hi');
+
+        try {
+          await generator.next();
+          expect.fail('Should have thrown');
+        } catch (e) {
+          expect(e).toBeInstanceOf(ApiError);
+          expect((e as ApiError).code).toBe('TIMEOUT');
+          expect((e as ApiError).isTimeout).toBe(true);
+          expect((e as ApiError).message).toContain('timed out');
+        }
+      });
+
+      it('throws ApiError with TIMEOUT code when stream read times out', async () => {
+        vi.useFakeTimers();
+
+        // Create a mock reader with proper cancel method
+        const mockCancel = vi.fn().mockResolvedValue(undefined);
+
+        // Mock a response where reader.read() never resolves (simulating dropped connection)
+        global.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: () =>
+                new Promise(() => {
+                  // Never resolves - simulates connection drop
+                }),
+              cancel: mockCancel,
+            }),
+          },
+        });
+
+        const generator = chat.stream('conv-1', 'Hi');
+        const nextPromise = generator.next();
+
+        // Advance past the STREAM_READ_TIMEOUT (60 seconds)
+        await vi.advanceTimersByTimeAsync(60001);
+
+        // Should yield an error event first, then throw
+        const result = await nextPromise;
+        expect(result.value).toEqual(
+          expect.objectContaining({
+            type: 'error',
+            code: 'TIMEOUT',
+          })
+        );
+
+        // Verify reader.cancel() was called
+        expect(mockCancel).toHaveBeenCalled();
+
+        // Next iteration should throw
+        await expect(generator.next()).rejects.toThrow(ApiError);
+
+        vi.useRealTimers();
+      });
+
+      it('yields error event before throwing on stream timeout', async () => {
+        vi.useFakeTimers();
+
+        const mockCancel = vi.fn().mockResolvedValue(undefined);
+
+        global.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: () => new Promise(() => {}), // Never resolves
+              cancel: mockCancel,
+            }),
+          },
+        });
+
+        const generator = chat.stream('conv-1', 'Hi');
+        const nextPromise = generator.next();
+
+        await vi.advanceTimersByTimeAsync(60001);
+
+        // First should yield error event
+        const errorEvent = await nextPromise;
+        expect(errorEvent.value?.type).toBe('error');
+        expect(errorEvent.value?.code).toBe('TIMEOUT');
+        expect(errorEvent.value?.retryable).toBe(false);
+        expect(errorEvent.done).toBe(false);
+
+        vi.useRealTimers();
+      });
+
+      it('handles successful read after timeout is set but before it fires', async () => {
+        // This tests the race condition fix - if read() resolves quickly,
+        // the timeout should be cleared and not cause issues
+        const events = [
+          { type: 'token', text: 'Quick response' },
+          { type: 'done', id: '1', created_at: '2024-01-01' },
+        ];
+        global.fetch = mockStreamResponse(events);
+
+        const collected = [];
+        for await (const event of chat.stream('conv-1', 'Hi')) {
+          collected.push(event);
+        }
+
+        // Should complete normally without timeout interference
+        expect(collected).toHaveLength(2);
+        expect(collected[0].type).toBe('token');
+        expect(collected[1].type).toBe('done');
+      });
+
+      it('includes force_tools in stream request', async () => {
+        const events = [{ type: 'done', id: '1', created_at: '2024-01-01' }];
+        global.fetch = mockStreamResponse(events);
+
+        const collected = [];
+        for await (const event of chat.stream('conv-1', 'Search this', undefined, ['web_search'])) {
+          collected.push(event);
+        }
+
+        expect(fetch).toHaveBeenCalledWith(
+          '/api/conversations/conv-1/chat/stream',
+          expect.objectContaining({
+            body: JSON.stringify({
+              message: 'Search this',
+              force_tools: ['web_search'],
+            }),
+          })
+        );
+      });
     });
   });
 
@@ -457,7 +594,8 @@ describe('API Client', () => {
     });
 
     it('includes status code in ApiError', async () => {
-      global.fetch = mockFetchResponse({ error: 'Forbidden' }, 403);
+      // Backend returns structured error format: { error: { code, message } }
+      global.fetch = mockFetchResponse({ error: { code: 'FORBIDDEN', message: 'Forbidden' } }, 403);
 
       try {
         await conversations.list();

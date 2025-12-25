@@ -1,6 +1,7 @@
 import { getElementById, autoResizeTextarea } from '../utils/dom';
 import { MICROPHONE_ICON, STOP_ICON } from '../utils/icons';
 import { updateSendButtonState } from './MessageInput';
+import { toast } from './Toast';
 import { isTouchDevice } from '../gestures/swipe';
 
 // Language display names
@@ -328,13 +329,13 @@ export function initVoiceInput(): void {
     // Handle specific errors
     switch (event.error) {
       case 'not-allowed':
-        alert('Microphone access denied. Please allow microphone access in your browser settings.');
+        toast.error('Microphone access denied. Please allow microphone access in your browser settings.');
         break;
       case 'network':
-        alert('Speech recognition requires an internet connection. Please check your connection and try again.');
+        toast.error('Speech recognition requires an internet connection. Please check your connection.');
         break;
       case 'service-not-allowed':
-        alert('Speech recognition service is not available. This may require HTTPS.');
+        toast.error('Speech recognition service is not available. This may require HTTPS.');
         break;
       case 'no-speech':
         // Silent timeout, just stop quietly
@@ -344,6 +345,7 @@ export function initVoiceInput(): void {
         break;
       default:
         console.error('Unexpected speech recognition error:', event.error);
+        toast.error('Speech recognition failed. Please try again.');
     }
 
     resetRecordingState(voiceBtn);

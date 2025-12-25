@@ -24,7 +24,9 @@ ai-chatbot/
 │   │   ├── jwt_auth.py           # JWT token handling, @require_auth decorator
 │   │   └── google_auth.py        # GIS token validation, email whitelist
 │   ├── api/
-│   │   └── routes.py             # REST endpoints (/api/*, /auth/*)
+│   │   ├── routes.py             # REST endpoints (/api/*, /auth/*)
+│   │   ├── errors.py             # Standardized error responses
+│   │   └── utils.py              # API response building utilities
 │   ├── agent/
 │   │   ├── chat_agent.py         # LangGraph agent with Gemini
 │   │   └── tools.py              # Agent tools (fetch_url, web_search, generate_image)
@@ -53,7 +55,9 @@ ai-chatbot/
 │       │   ├── VoiceInput.ts     # Speech-to-text input
 │       │   ├── Lightbox.ts       # Image viewer
 │       │   ├── ScrollToBottom.ts # Scroll-to-bottom button
-│       │   └── VersionBanner.ts  # New version notification
+│       │   ├── VersionBanner.ts  # New version notification
+│       │   ├── Toast.ts          # Toast notifications
+│       │   └── Modal.ts          # Modal dialogs (alert/confirm/prompt)
 │       ├── gestures/swipe.ts     # Touch handlers
 │       ├── utils/
 │       │   ├── dom.ts            # DOM helpers, escapeHtml
@@ -468,7 +472,7 @@ Add SVG constants to [icons.ts](web/src/utils/icons.ts) and import where needed.
 
 ## Testing
 
-The project has comprehensive test suites for both backend (227 tests, 72% coverage) and frontend (125 Vitest + 114 Playwright tests).
+The project has comprehensive test suites for both backend and frontend.
 
 ### Backend Test Structure
 
@@ -500,21 +504,25 @@ tests/
 ```
 web/tests/
 ├── global-setup.ts                # Playwright test setup (DB reset before each test)
-├── unit/                          # Vitest unit tests (101 tests)
+├── unit/                          # Vitest unit tests
 │   ├── setup.ts                   # Test setup (jsdom config)
-│   ├── api-client.test.ts         # API client utilities
+│   ├── api-client.test.ts         # API client utilities (retry, timeout, errors)
 │   ├── dom.test.ts                # DOM utilities (escapeHtml, scrollToBottom)
-│   └── store.test.ts              # Zustand store
-├── component/                     # Component tests with jsdom (24 tests)
+│   ├── store.test.ts              # Zustand store
+│   ├── toast.test.ts              # Toast notification component
+│   └── modal.test.ts              # Modal dialog component
+├── component/                     # Component tests with jsdom
 │   └── Sidebar.test.ts            # Sidebar interactions
-├── e2e/                           # Playwright E2E tests (42 tests × 2 browsers = 84)
+├── e2e/                           # Playwright E2E tests (2 browsers)
 │   ├── auth.spec.ts               # Authentication flow
 │   ├── chat.spec.ts               # Chat functionality (batch + streaming)
 │   ├── conversation.spec.ts       # Conversation CRUD
 │   └── mobile.spec.ts             # Mobile viewport tests
-└── visual/                        # Visual regression tests (15 tests × 2 browsers = 30)
+└── visual/                        # Visual regression tests
     ├── chat.visual.ts             # Chat interface screenshots
-    └── mobile.visual.ts           # Mobile layout screenshots
+    ├── mobile.visual.ts           # Mobile layout screenshots
+    ├── error-ui.visual.ts         # Error UI (toast, modal, version banner)
+    └── popups.visual.ts           # Popups (sources, cost, image gen, lightbox)
 ```
 
 ### Key Testing Patterns
@@ -536,17 +544,17 @@ web/tests/
 
 ```bash
 # Backend tests
-make test              # Run all backend tests (227 tests)
+make test              # Run all backend tests
 make test-unit         # Run unit tests only
 make test-integration  # Run integration tests only
 make test-cov          # Run with coverage report
 
 # Frontend tests (from project root)
 make test-fe           # Run unit + component + E2E tests (functional tests)
-make test-fe-unit      # Run Vitest unit tests (101 tests)
-make test-fe-component # Run component tests (24 tests)
-make test-fe-e2e       # Run Playwright E2E tests (84 tests)
-make test-fe-visual    # Run visual regression tests (30 tests) - see below
+make test-fe-unit      # Run Vitest unit tests
+make test-fe-component # Run component tests
+make test-fe-e2e       # Run Playwright E2E tests
+make test-fe-visual    # Run visual regression tests - see below
 make test-fe-watch     # Run Vitest in watch mode
 
 # All tests
@@ -631,6 +639,151 @@ make test-fe-visual-update    # Update baselines after intentional UI changes
 
 - [TODO.md](TODO.md) - Memory bank for planned work
 - [README.md](README.md) - User-facing documentation
+
+## Error Handling
+
+The application implements comprehensive error handling across both backend and frontend to ensure graceful failure recovery and a good user experience.
+
+### Backend Error Responses
+
+All API errors return a standardized JSON format from [errors.py](src/api/errors.py):
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Human-readable message",
+    "retryable": false,
+    "details": { "field": "email" }
+  }
+}
+```
+
+**Error codes** (from `ErrorCode` enum):
+- `AUTH_REQUIRED`, `AUTH_INVALID`, `AUTH_EXPIRED`, `AUTH_FORBIDDEN` - Authentication errors
+- `VALIDATION_ERROR`, `MISSING_FIELD`, `INVALID_FORMAT` - Input validation errors
+- `NOT_FOUND`, `CONFLICT` - Resource errors
+- `SERVER_ERROR`, `TIMEOUT`, `SERVICE_UNAVAILABLE`, `RATE_LIMITED` - Server errors (retryable)
+- `EXTERNAL_SERVICE_ERROR`, `LLM_ERROR`, `TOOL_ERROR` - External service errors
+
+**Helper functions** for common responses:
+```python
+from src.api.errors import validation_error, not_found_error, server_error
+
+# Returns tuple of (response_dict, status_code)
+return validation_error("Invalid email", field="email")  # 400
+return not_found_error("Conversation")  # 404
+return server_error()  # 500
+```
+
+**Safe JSON parsing** - Always use `get_request_json()` from [utils.py](src/api/utils.py):
+```python
+from src.api.utils import get_request_json
+from src.api.errors import invalid_json_error
+
+data = get_request_json(request)
+if data is None:
+    return invalid_json_error()
+```
+
+### Frontend Error Handling
+
+#### Toast Notifications
+
+Use [Toast.ts](web/src/components/Toast.ts) for transient error messages:
+```typescript
+import { toast } from './components/Toast';
+
+toast.error('Failed to save.');
+toast.error('Connection lost.', {
+  action: { label: 'Retry', onClick: () => retry() }
+});
+toast.warning('File too large.');
+toast.success('Saved!');
+toast.info('Processing...');
+```
+
+- Auto-dismiss after 5 seconds by default
+- Persistent if action button is provided
+- Top-center positioning (doesn't interfere with input)
+
+#### Modal Dialogs
+
+Use [Modal.ts](web/src/components/Modal.ts) instead of native `alert()`, `confirm()`, `prompt()`:
+```typescript
+import { showAlert, showConfirm, showPrompt } from './components/Modal';
+
+await showAlert({ title: 'Error', message: 'Something went wrong.' });
+
+const confirmed = await showConfirm({
+  title: 'Delete',
+  message: 'Are you sure?',
+  confirmLabel: 'Delete',
+  danger: true
+});
+
+const value = await showPrompt({
+  title: 'Rename',
+  message: 'Enter new name:',
+  defaultValue: 'Untitled'
+});
+```
+
+#### API Client Error Handling
+
+The [api/client.ts](web/src/api/client.ts) provides:
+
+1. **Retry logic with exponential backoff** - Only for GET requests (idempotent)
+2. **Request timeouts** - 30s default, 5 minutes for chat
+3. **Streaming per-read timeout** - 60s timeout per read (backend sends keepalives every 15s)
+4. **Extended ApiError class** with semantic properties:
+
+```typescript
+try {
+  await someApiCall();
+} catch (error) {
+  if (error instanceof ApiError) {
+    if (error.isTimeout) {
+      toast.error('Request timed out.');
+    } else if (error.isNetworkError) {
+      toast.error('Network error. Check your connection.');
+    } else if (error.retryable) {
+      toast.error('Failed.', { action: { label: 'Retry', onClick: retry } });
+    } else {
+      toast.error(error.message);
+    }
+  }
+}
+```
+
+**IMPORTANT - Retry Safety:**
+- ✅ Safe to retry: GET requests (idempotent)
+- ⚠️ Conditionally safe: PATCH, DELETE (idempotent operations)
+- ❌ NOT safe to retry: POST (creates resources, could duplicate)
+
+### Error Handling Guidelines
+
+**Backend:**
+1. Never expose internal error details to users - log them, return generic message
+2. Use `get_request_json()` for all JSON parsing (handles malformed JSON gracefully)
+3. Wrap external API calls (Gemini, Google Auth) in try/except
+4. Use appropriate error helpers from `errors.py`
+5. Log errors with `exc_info=True` before returning error response
+
+**Frontend:**
+1. Every async operation should have error handling
+2. Use toast for transient errors, modal for confirmations
+3. Preserve user input on send failures (draft system in store)
+4. Show retry buttons for retryable errors
+5. Don't hide partial content on streaming errors
+
+### Key Files
+
+- [errors.py](src/api/errors.py) - Backend error response utilities
+- [Toast.ts](web/src/components/Toast.ts) - Toast notification component
+- [Modal.ts](web/src/components/Modal.ts) - Modal dialog component
+- [api/client.ts](web/src/api/client.ts) - API client with retry/timeout
+- [store.ts](web/src/state/store.ts) - Notification state, draft persistence
 
 ## Structured Logging
 

@@ -1,6 +1,7 @@
 import { escapeHtml, getElementById } from '../utils/dom';
 import { useStore } from '../state/store';
 import { conversations as conversationsApi } from '../api/client';
+import { toast } from './Toast';
 
 /**
  * Initialize model selector event handlers
@@ -62,12 +63,16 @@ async function selectModel(modelId: string): Promise<void> {
   const store = useStore.getState();
   const { currentConversation, models } = store;
 
-  // Update UI immediately
+  // Get the model to display
   const model = models.find((m) => m.id === modelId);
-  if (model) {
-    updateCurrentModelDisplay(model.name);
-  }
+  if (!model) return;
 
+  // Get previous model for rollback
+  const previousModelId = currentConversation?.model || store.defaultModel;
+  const previousModel = models.find((m) => m.id === previousModelId);
+
+  // Update UI immediately (optimistic update)
+  updateCurrentModelDisplay(model.name);
   closeModelDropdown();
 
   // Update conversation on server if one is selected
@@ -77,6 +82,11 @@ async function selectModel(modelId: string): Promise<void> {
       store.updateConversation(currentConversation.id, { model: modelId });
     } catch (error) {
       console.error('Failed to update model:', error);
+      // Revert optimistic update on failure
+      if (previousModel) {
+        updateCurrentModelDisplay(previousModel.name);
+      }
+      toast.error('Failed to change model. Please try again.');
     }
   }
 }

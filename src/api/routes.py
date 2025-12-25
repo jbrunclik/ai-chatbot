@@ -16,11 +16,21 @@ from src.agent.chat_agent import (
     get_full_tool_results,
     set_current_request_id,
 )
+from src.api.errors import (
+    auth_forbidden_error,
+    auth_invalid_error,
+    invalid_json_error,
+    llm_error,
+    not_found_error,
+    server_error,
+    validation_error,
+)
 from src.api.utils import (
     build_chat_response,
     build_stream_done_event,
     calculate_and_save_message_cost,
     extract_metadata_fields,
+    get_request_json,
 )
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
 from src.auth.jwt_auth import create_token, get_current_user, require_auth
@@ -48,14 +58,16 @@ def google_auth() -> tuple[dict[str, Any], int]:
     logger.info("Google authentication request")
     if Config.is_development():
         logger.warning("Authentication attempted in development mode")
-        return {"error": "Authentication disabled in local mode"}, 400
+        return validation_error("Authentication disabled in local mode")
 
-    data = request.get_json() or {}
+    data = get_request_json(request)
+    if data is None:
+        return invalid_json_error()
     id_token = data.get("credential")
 
     if not id_token:
         logger.warning("Google auth request missing credential")
-        return {"error": "Missing credential"}, 400
+        return validation_error("Missing credential", field="credential")
 
     try:
         logger.debug("Verifying Google ID token")
@@ -64,11 +76,11 @@ def google_auth() -> tuple[dict[str, Any], int]:
         logger.debug("Google token verified", extra={"email": email})
     except GoogleAuthError as e:
         logger.warning("Google token verification failed", extra={"error": str(e)})
-        return {"error": str(e)}, 401
+        return auth_invalid_error(str(e))
 
     if not is_email_allowed(email):
         logger.warning("Email not in whitelist", extra={"email": email})
-        return {"error": "Email not authorized"}, 403
+        return auth_forbidden_error("Email not authorized")
 
     # Create or get user
     logger.debug("Getting or creating user", extra={"email": email})
@@ -153,7 +165,9 @@ def create_conversation() -> tuple[dict[str, str], int]:
     """Create a new conversation."""
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
-    data = request.get_json() or {}
+    data = get_request_json(request)
+    if data is None:
+        return invalid_json_error()
     model = data.get("model", Config.DEFAULT_MODEL)
     log_payload_snippet(logger, data)
 
@@ -166,7 +180,10 @@ def create_conversation() -> tuple[dict[str, str], int]:
                 "available_models": list(Config.MODELS.keys()),
             },
         )
-        return {"error": f"Invalid model. Choose from: {list(Config.MODELS.keys())}"}, 400
+        return validation_error(
+            f"Invalid model. Choose from: {list(Config.MODELS.keys())}",
+            field="model",
+        )
 
     logger.debug("Creating conversation", extra={"user_id": user.id, "model": model})
     conv = db.create_conversation(user.id, model=model)
@@ -201,7 +218,7 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
             "Conversation not found",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Conversation not found"}, 404
+        return not_found_error("Conversation")
 
     messages = db.get_messages(conv_id)
     logger.info(
@@ -258,7 +275,9 @@ def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
     """Update a conversation (title, model)."""
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
-    data = request.get_json() or {}
+    data = get_request_json(request)
+    if data is None:
+        return invalid_json_error()
     title = data.get("title")
     model = data.get("model")
     log_payload_snippet(logger, data)
@@ -268,7 +287,10 @@ def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
             "Invalid model in update request",
             extra={"user_id": user.id, "conversation_id": conv_id, "model": model},
         )
-        return {"error": f"Invalid model. Choose from: {list(Config.MODELS.keys())}"}, 400
+        return validation_error(
+            f"Invalid model. Choose from: {list(Config.MODELS.keys())}",
+            field="model",
+        )
 
     logger.debug(
         "Updating conversation",
@@ -279,7 +301,7 @@ def update_conversation(conv_id: str) -> tuple[dict[str, str], int]:
             "Conversation not found for update",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Conversation not found"}, 404
+        return not_found_error("Conversation")
 
     logger.info("Conversation updated", extra={"user_id": user.id, "conversation_id": conv_id})
     return {"status": "updated"}, 200
@@ -298,7 +320,7 @@ def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
             "Conversation not found for deletion",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Conversation not found"}, 404
+        return not_found_error("Conversation")
 
     logger.info("Conversation deleted", extra={"user_id": user.id, "conversation_id": conv_id})
     return {"status": "deleted"}, 200
@@ -328,9 +350,11 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             "Conversation not found for chat",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Conversation not found"}, 404
+        return not_found_error("Conversation")
 
-    data = request.get_json() or {}
+    data = get_request_json(request)
+    if data is None:
+        return invalid_json_error()
     message_text = data.get("message", "").strip()
     files = data.get("files", [])
     force_tools = data.get("force_tools", [])
@@ -344,7 +368,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             "Chat request missing message and files",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Message or files required"}, 400
+        return validation_error("Message or files required")
 
     # Validate files if present
     if files:
@@ -363,7 +387,7 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
                     "file_count": len(files),
                 },
             )
-            return {"error": error}, 400
+            return validation_error(error or "File validation failed", field="files")
         # Generate thumbnails for images
         logger.debug(
             "Processing image files for thumbnails",
@@ -498,8 +522,18 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
                 "response_length": len(clean_response),
             },
         )
+    except TimeoutError:
+        logger.error(
+            "Timeout in chat_batch",
+            extra={
+                "user_id": user.id,
+                "conversation_id": conv_id,
+            },
+            exc_info=True,
+        )
+        return llm_error("Request timed out. The AI took too long to respond. Please try again.")
     except Exception as e:
-        # Log the error and return a proper error response
+        # Log the error but don't expose internal details to users
         import traceback
 
         logger.error(
@@ -512,7 +546,14 @@ def chat_batch(conv_id: str) -> tuple[dict[str, str], int]:
             },
             exc_info=True,
         )
-        return {"error": f"Failed to generate response: {str(e)}"}, 500
+        # Check for common recoverable errors
+        error_str = str(e).lower()
+        if "timeout" in error_str or "timed out" in error_str:
+            return llm_error("Request timed out. Please try again.")
+        if "rate limit" in error_str or "quota" in error_str:
+            return llm_error("AI service is busy. Please try again in a moment.")
+        # Generic server error (don't expose internal details)
+        return server_error("Failed to generate response. Please try again.")
 
     # Auto-generate title from first message if still default
     if conv.title == "New Conversation":
@@ -557,9 +598,11 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
             "Conversation not found for stream chat",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Conversation not found"}, 404
+        return not_found_error("Conversation")
 
-    data = request.get_json() or {}
+    data = get_request_json(request)
+    if data is None:
+        return invalid_json_error()
     message_text = data.get("message", "").strip()
     files = data.get("files", [])
     force_tools = data.get("force_tools", [])
@@ -573,7 +616,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
             "Stream chat request missing message and files",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Message or files required"}, 400
+        return validation_error("Message or files required")
 
     # Validate files if present
     if files:
@@ -592,7 +635,7 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                     "file_count": len(files),
                 },
             )
-            return {"error": error}, 400
+            return validation_error(error or "File validation failed", field="files")
         # Generate thumbnails for images
         logger.debug(
             "Processing image files for thumbnails in stream",
@@ -710,8 +753,30 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                         # Stream completed successfully
                         break
                     elif isinstance(item, Exception):
-                        # Error occurred
-                        yield f"data: {json.dumps({'type': 'error', 'message': str(item)})}\n\n"
+                        # Error occurred - send structured error for frontend handling
+                        error_str = str(item).lower()
+                        if "timeout" in error_str or "timed out" in error_str:
+                            error_data = {
+                                "type": "error",
+                                "code": "TIMEOUT",
+                                "message": "Request timed out. Please try again.",
+                                "retryable": True,
+                            }
+                        elif "rate limit" in error_str or "quota" in error_str:
+                            error_data = {
+                                "type": "error",
+                                "code": "RATE_LIMITED",
+                                "message": "AI service is busy. Please try again in a moment.",
+                                "retryable": True,
+                            }
+                        else:
+                            error_data = {
+                                "type": "error",
+                                "code": "SERVER_ERROR",
+                                "message": "Failed to generate response. Please try again.",
+                                "retryable": True,
+                            }
+                        yield f"data: {json.dumps(error_data)}\n\n"
                         return
                     elif isinstance(item, tuple):
                         # Final tuple with (clean_content, metadata, tool_results, usage_info)
@@ -822,7 +887,14 @@ def chat_stream(conv_id: str) -> Response | tuple[dict[str, str], int]:
                 },
                 exc_info=True,
             )
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            # Send structured error (don't expose internal details)
+            error_data = {
+                "type": "error",
+                "code": "SERVER_ERROR",
+                "message": "An error occurred while generating the response. Please try again.",
+                "retryable": True,
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
 
     return Response(
         generate(),
@@ -911,7 +983,7 @@ def get_message_thumbnail(
     message = db.get_message_by_id(message_id)
     if not message:
         logger.warning("Message not found for thumbnail", extra={"message_id": message_id})
-        return {"error": "Message not found"}, 404
+        return not_found_error("Message")
 
     # Verify user owns the conversation
     conv = db.get_conversation(message.conversation_id, user.id)
@@ -919,7 +991,7 @@ def get_message_thumbnail(
         logger.warning(
             "Unauthorized thumbnail access", extra={"user_id": user.id, "message_id": message_id}
         )
-        return {"error": "Not authorized"}, 403
+        return auth_forbidden_error("Not authorized to access this resource")
 
     # Get the file
     if not message.files or file_index >= len(message.files):
@@ -927,7 +999,7 @@ def get_message_thumbnail(
             "File not found for thumbnail",
             extra={"message_id": message_id, "file_index": file_index},
         )
-        return {"error": "File not found"}, 404
+        return not_found_error("File")
 
     file = message.files[file_index]
     file_type = file.get("type", "application/octet-stream")
@@ -943,7 +1015,7 @@ def get_message_thumbnail(
                 "file_type": file_type,
             },
         )
-        return {"error": "File is not an image"}, 400
+        return validation_error("File is not an image", field="file_type")
 
     # Prefer thumbnail, fall back to full image if thumbnail doesn't exist
     thumbnail_data = file.get("thumbnail")
@@ -992,7 +1064,7 @@ def get_message_thumbnail(
                 "file_index": file_index,
             },
         )
-        return {"error": "Image data not found"}, 404
+        return not_found_error("Image data")
 
     try:
         binary_data = base64.b64decode(file_data)
@@ -1015,7 +1087,7 @@ def get_message_thumbnail(
         )
     except Exception as e:
         logger.error("Failed to decode image data", extra={"error": str(e)}, exc_info=True)
-        return {"error": "Invalid image data"}, 500
+        return server_error("Failed to process image data")
 
 
 @api.route("/messages/<message_id>/files/<int:file_index>", methods=["GET"])
@@ -1038,7 +1110,7 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
         logger.warning(
             "Message not found for file", extra={"user_id": user.id, "message_id": message_id}
         )
-        return {"error": "Message not found"}, 404
+        return not_found_error("Message")
 
     # Verify user owns the conversation
     conv = db.get_conversation(message.conversation_id, user.id)
@@ -1051,7 +1123,7 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
                 "conversation_id": message.conversation_id,
             },
         )
-        return {"error": "Not authorized"}, 403
+        return auth_forbidden_error("Not authorized to access this resource")
 
     # Get the file
     if not message.files or file_index >= len(message.files):
@@ -1064,7 +1136,7 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
                 "file_index": file_index,
             },
         )
-        return {"error": "File not found"}, 404
+        return not_found_error("File")
 
     file = message.files[file_index]
     file_data = file.get("data", "")
@@ -1093,7 +1165,7 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
         )
     except Exception as e:
         logger.error("Failed to decode file data", extra={"error": str(e)}, exc_info=True)
-        return {"error": "Invalid file data"}, 500
+        return server_error("Failed to process file data")
 
 
 # ============================================================================
@@ -1118,7 +1190,7 @@ def get_conversation_cost(conv_id: str) -> tuple[dict[str, Any], int]:
             "Conversation not found for cost query",
             extra={"user_id": user.id, "conversation_id": conv_id},
         )
-        return {"error": "Conversation not found"}, 404
+        return not_found_error("Conversation")
 
     cost_usd = db.get_conversation_cost(conv_id)
     cost_display = convert_currency(cost_usd, Config.COST_CURRENCY)
@@ -1153,7 +1225,7 @@ def get_message_cost(message_id: str) -> tuple[dict[str, Any], int]:
             "Message not found for cost query",
             extra={"user_id": user.id, "message_id": message_id},
         )
-        return {"error": "Message not found"}, 404
+        return not_found_error("Message")
 
     conv = db.get_conversation(message.conversation_id, user.id)
     if not conv:
@@ -1165,7 +1237,7 @@ def get_message_cost(message_id: str) -> tuple[dict[str, Any], int]:
                 "conversation_id": message.conversation_id,
             },
         )
-        return {"error": "Message not found"}, 404
+        return not_found_error("Message")
 
     cost_data = db.get_message_cost(message_id)
     if not cost_data:
@@ -1173,7 +1245,7 @@ def get_message_cost(message_id: str) -> tuple[dict[str, Any], int]:
             "No cost data found for message",
             extra={"user_id": user.id, "message_id": message_id},
         )
-        return {"error": "No cost data available for this message"}, 404
+        return not_found_error("Cost data for this message")
 
     cost_display = convert_currency(cost_data["cost_usd"], Config.COST_CURRENCY)
     formatted_cost = format_cost(cost_display, Config.COST_CURRENCY)
@@ -1233,7 +1305,7 @@ def get_user_monthly_cost() -> tuple[dict[str, Any], int]:
             "Invalid month in request",
             extra={"user_id": user.id, "year": year, "month": month},
         )
-        return {"error": "Month must be between 1 and 12"}, 400
+        return validation_error("Month must be between 1 and 12", field="month")
 
     logger.debug(
         "Getting user monthly cost",
