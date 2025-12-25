@@ -3,11 +3,10 @@
 import json
 from typing import TYPE_CHECKING
 
-import pytest
 from flask.testing import FlaskClient
 
 if TYPE_CHECKING:
-    from src.db.models import Conversation, Database, User
+    from src.db.models import Conversation, Database
 
 
 class TestListConversations:
@@ -17,7 +16,7 @@ class TestListConversations:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return list of user's conversations."""
         response = client.get("/api/conversations", headers=auth_headers)
@@ -49,9 +48,7 @@ class TestListConversations:
 class TestCreateConversation:
     """Tests for POST /api/conversations endpoint."""
 
-    def test_creates_conversation(
-        self, client: FlaskClient, auth_headers: dict[str, str]
-    ) -> None:
+    def test_creates_conversation(self, client: FlaskClient, auth_headers: dict[str, str]) -> None:
         """Should create new conversation."""
         response = client.post(
             "/api/conversations",
@@ -95,9 +92,7 @@ class TestCreateConversation:
         data = json.loads(response.data)
         assert data["title"] == "New Conversation"  # Default title
 
-    def test_rejects_invalid_model(
-        self, client: FlaskClient, auth_headers: dict[str, str]
-    ) -> None:
+    def test_rejects_invalid_model(self, client: FlaskClient, auth_headers: dict[str, str]) -> None:
         """Should return 400 for invalid model."""
         response = client.post(
             "/api/conversations",
@@ -122,8 +117,8 @@ class TestGetConversation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
+        test_conversation: Conversation,
+        test_database: Database,
     ) -> None:
         """Should return conversation with its messages."""
         # Add a message
@@ -156,21 +151,17 @@ class TestGetConversation:
     def test_returns_404_for_other_users_conversation(
         self,
         client: FlaskClient,
-        test_database: "Database",
+        test_database: Database,
     ) -> None:
         """Should return 404 when accessing another user's conversation."""
         # Create another user and their conversation
-        other_user = test_database.get_or_create_user(
-            email="other@example.com", name="Other"
-        )
+        other_user = test_database.get_or_create_user(email="other@example.com", name="Other")
         other_conv = test_database.create_conversation(other_user.id)
 
         # Try to access with original test user's auth
         from src.auth.jwt_auth import create_token
 
-        test_user = test_database.get_or_create_user(
-            email="test@example.com", name="Test"
-        )
+        test_user = test_database.get_or_create_user(email="test@example.com", name="Test")
         token = create_token(test_user)
 
         response = client.get(
@@ -180,9 +171,7 @@ class TestGetConversation:
 
         assert response.status_code == 404
 
-    def test_requires_auth(
-        self, client: FlaskClient, test_conversation: "Conversation"
-    ) -> None:
+    def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.get(f"/api/conversations/{test_conversation.id}")
         assert response.status_code == 401
@@ -195,7 +184,7 @@ class TestUpdateConversation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should update conversation title."""
         response = client.patch(
@@ -212,7 +201,7 @@ class TestUpdateConversation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should update conversation model."""
         response = client.patch(
@@ -229,7 +218,7 @@ class TestUpdateConversation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for invalid model."""
         response = client.patch(
@@ -252,9 +241,7 @@ class TestUpdateConversation:
 
         assert response.status_code == 404
 
-    def test_requires_auth(
-        self, client: FlaskClient, test_conversation: "Conversation"
-    ) -> None:
+    def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.patch(
             f"/api/conversations/{test_conversation.id}",
@@ -270,7 +257,7 @@ class TestDeleteConversation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should delete conversation."""
         response = client.delete(
@@ -298,9 +285,7 @@ class TestDeleteConversation:
 
         assert response.status_code == 404
 
-    def test_requires_auth(
-        self, client: FlaskClient, test_conversation: "Conversation"
-    ) -> None:
+    def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.delete(f"/api/conversations/{test_conversation.id}")
         assert response.status_code == 401

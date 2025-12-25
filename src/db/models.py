@@ -1,5 +1,7 @@
 import json
+import os
 import sqlite3
+import time
 import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -14,6 +16,67 @@ from src.config import Config
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def check_database_connectivity(db_path: Path | None = None) -> tuple[bool, str | None]:
+    """Check if the database is accessible.
+
+    This function performs a series of checks to verify database connectivity
+    before starting the application. It checks directory existence, permissions,
+    and performs a simple query test.
+
+    Args:
+        db_path: Optional path to database file. Uses Config.DATABASE_PATH if not provided.
+
+    Returns:
+        Tuple of (success: bool, error_message: str | None)
+    """
+    db_path = db_path or Config.DATABASE_PATH
+    logger.debug("Checking database connectivity", extra={"db_path": str(db_path)})
+
+    # Check if parent directory exists and is writable
+    parent_dir = db_path.parent
+    if not parent_dir.exists():
+        error = f"Database directory does not exist: {parent_dir}"
+        logger.error("Database connectivity check failed", extra={"error": error})
+        return False, error
+
+    if not os.access(parent_dir, os.W_OK):
+        error = f"Database directory is not writable: {parent_dir}"
+        logger.error("Database connectivity check failed", extra={"error": error})
+        return False, error
+
+    # Check if database file exists and is accessible
+    if db_path.exists():
+        if not os.access(db_path, os.R_OK | os.W_OK):
+            error = f"Database file is not readable/writable: {db_path}"
+            logger.error("Database connectivity check failed", extra={"error": error})
+            return False, error
+
+    # Try to connect and run a simple query
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.execute("SELECT 1")
+        conn.close()
+        logger.debug("Database connectivity check passed", extra={"db_path": str(db_path)})
+        return True, None
+    except sqlite3.OperationalError as e:
+        error_msg = str(e)
+        if "unable to open database file" in error_msg:
+            error = f"Cannot open database file: {db_path}. Check file permissions."
+        elif "database is locked" in error_msg:
+            error = f"Database is locked: {db_path}. Another process may be using it."
+        elif "disk I/O error" in error_msg:
+            error = f"Disk I/O error accessing database: {db_path}. Check disk health."
+        else:
+            error = f"Database error: {error_msg}"
+        logger.error("Database connectivity check failed", extra={"error": error})
+        return False, error
+    except Exception as e:
+        error = f"Unexpected database error: {e}"
+        logger.error("Database connectivity check failed", extra={"error": error}, exc_info=True)
+        return False, error
+
 
 # Path to migrations directory
 MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
@@ -54,6 +117,9 @@ class Message:
 class Database:
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or Config.DATABASE_PATH
+        # Query logging is only active in development/debug mode
+        self._should_log_queries = Config.LOG_LEVEL == "DEBUG" or Config.is_development()
+        self._slow_query_threshold_ms = Config.SLOW_QUERY_THRESHOLD_MS
         self._init_db()
 
     @contextmanager
@@ -64,6 +130,65 @@ class Database:
             yield conn
         finally:
             conn.close()
+
+    def _execute_with_timing(
+        self,
+        conn: sqlite3.Connection,
+        query: str,
+        params: tuple[Any, ...] = (),
+    ) -> sqlite3.Cursor:
+        """Execute a query with optional timing and logging.
+
+        In development/debug mode, this method tracks query execution time
+        and logs warnings for slow queries.
+
+        Args:
+            conn: SQLite connection
+            query: SQL query string
+            params: Query parameters
+
+        Returns:
+            SQLite cursor with results
+        """
+        if not self._should_log_queries:
+            return conn.execute(query, params)
+
+        start_time = time.perf_counter()
+        cursor = conn.execute(query, params)
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+        # Truncate query for logging (normalize whitespace)
+        query_snippet = " ".join(query.split())
+        if len(query_snippet) > 200:
+            query_snippet = query_snippet[:200] + "..."
+
+        # Truncate params for logging (avoid logging large data like base64 files)
+        params_str = str(params)
+        if len(params_str) > 100:
+            params_snippet = params_str[:100] + "..."
+        else:
+            params_snippet = params_str
+
+        if elapsed_ms >= self._slow_query_threshold_ms:
+            logger.warning(
+                "Slow query detected",
+                extra={
+                    "query_snippet": query_snippet,
+                    "params_snippet": params_snippet,
+                    "elapsed_ms": round(elapsed_ms, 2),
+                    "threshold_ms": self._slow_query_threshold_ms,
+                },
+            )
+        elif Config.LOG_LEVEL == "DEBUG":
+            logger.debug(
+                "Query executed",
+                extra={
+                    "query_snippet": query_snippet,
+                    "elapsed_ms": round(elapsed_ms, 2),
+                },
+            )
+
+        return cursor
 
     def _init_db(self) -> None:
         """Run yoyo migrations to initialize/update the database schema."""
@@ -89,7 +214,8 @@ class Database:
             # concurrent requests try to create the same user
             user_id = str(uuid.uuid4())
             now = datetime.now()
-            cursor = conn.execute(
+            cursor = self._execute_with_timing(
+                conn,
                 "INSERT OR IGNORE INTO users (id, email, name, picture, created_at) VALUES (?, ?, ?, ?, ?)",
                 (user_id, email, name, picture, now.isoformat()),
             )
@@ -107,7 +233,9 @@ class Database:
                 )
 
             # User already existed, fetch it
-            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            row = self._execute_with_timing(
+                conn, "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
             if not row:
                 # This should never happen - if INSERT OR IGNORE didn't insert,
                 # the user must exist. But handle it defensively.
@@ -123,7 +251,9 @@ class Database:
 
     def get_user_by_id(self, user_id: str) -> User | None:
         with self._get_conn() as conn:
-            row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+            row = self._execute_with_timing(
+                conn, "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
 
             if not row:
                 return None
@@ -149,7 +279,8 @@ class Database:
         )
 
         with self._get_conn() as conn:
-            conn.execute(
+            self._execute_with_timing(
+                conn,
                 """INSERT INTO conversations (id, user_id, title, model, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?)""",
                 (conv_id, user_id, title, model, now.isoformat(), now.isoformat()),
@@ -168,7 +299,8 @@ class Database:
 
     def get_conversation(self, conv_id: str, user_id: str) -> Conversation | None:
         with self._get_conn() as conn:
-            row = conn.execute(
+            row = self._execute_with_timing(
+                conn,
                 "SELECT * FROM conversations WHERE id = ? AND user_id = ?",
                 (conv_id, user_id),
             ).fetchone()
@@ -187,7 +319,8 @@ class Database:
 
     def list_conversations(self, user_id: str) -> list[Conversation]:
         with self._get_conn() as conn:
-            rows = conn.execute(
+            rows = self._execute_with_timing(
+                conn,
                 """SELECT * FROM conversations WHERE user_id = ?
                    ORDER BY updated_at DESC""",
                 (user_id,),
@@ -221,9 +354,10 @@ class Database:
         params.extend([conv_id, user_id])
 
         with self._get_conn() as conn:
-            cursor = conn.execute(
+            cursor = self._execute_with_timing(
+                conn,
                 f"UPDATE conversations SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
-                params,
+                tuple(params),
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -233,9 +367,12 @@ class Database:
             # Note: We intentionally keep message_costs even after conversation deletion
             # to preserve accurate cost reporting (the money was already spent)
             # Delete messages
-            conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conv_id,))
+            self._execute_with_timing(
+                conn, "DELETE FROM messages WHERE conversation_id = ?", (conv_id,)
+            )
             # Delete conversation
-            cursor = conn.execute(
+            cursor = self._execute_with_timing(
+                conn,
                 "DELETE FROM conversations WHERE id = ? AND user_id = ?",
                 (conv_id, user_id),
             )
@@ -285,7 +422,8 @@ class Database:
         )
 
         with self._get_conn() as conn:
-            conn.execute(
+            self._execute_with_timing(
+                conn,
                 """INSERT INTO messages (id, conversation_id, role, content, files, sources, generated_images, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
@@ -300,7 +438,8 @@ class Database:
                 ),
             )
             # Update conversation's updated_at
-            conn.execute(
+            self._execute_with_timing(
+                conn,
                 "UPDATE conversations SET updated_at = ? WHERE id = ?",
                 (now.isoformat(), conversation_id),
             )
@@ -322,7 +461,8 @@ class Database:
 
     def get_messages(self, conversation_id: str) -> list[Message]:
         with self._get_conn() as conn:
-            rows = conn.execute(
+            rows = self._execute_with_timing(
+                conn,
                 "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at",
                 (conversation_id,),
             ).fetchall()
@@ -346,7 +486,8 @@ class Database:
     def get_message_by_id(self, message_id: str) -> Message | None:
         """Get a single message by its ID."""
         with self._get_conn() as conn:
-            row = conn.execute(
+            row = self._execute_with_timing(
+                conn,
                 "SELECT * FROM messages WHERE id = ?",
                 (message_id,),
             ).fetchone()
@@ -408,7 +549,8 @@ class Database:
         )
 
         with self._get_conn() as conn:
-            conn.execute(
+            self._execute_with_timing(
+                conn,
                 """INSERT INTO message_costs (
                     id, message_id, conversation_id, user_id, model,
                     input_tokens, output_tokens, cost_usd, image_generation_cost_usd, created_at
@@ -440,7 +582,8 @@ class Database:
             Dict with 'cost_usd', 'input_tokens', 'output_tokens', 'model', 'image_generation_cost_usd', or None if not found
         """
         with self._get_conn() as conn:
-            row = conn.execute(
+            row = self._execute_with_timing(
+                conn,
                 """SELECT cost_usd, input_tokens, output_tokens, model, image_generation_cost_usd
                    FROM message_costs
                    WHERE message_id = ?""",
@@ -472,7 +615,8 @@ class Database:
             Total cost in USD
         """
         with self._get_conn() as conn:
-            row = conn.execute(
+            row = self._execute_with_timing(
+                conn,
                 "SELECT SUM(cost_usd) as total FROM message_costs WHERE conversation_id = ?",
                 (conversation_id,),
             ).fetchone()
@@ -506,7 +650,8 @@ class Database:
 
         with self._get_conn() as conn:
             # Get total cost and message count
-            total_row = conn.execute(
+            total_row = self._execute_with_timing(
+                conn,
                 """SELECT SUM(cost_usd) as total, COUNT(*) as count
                    FROM message_costs
                    WHERE user_id = ? AND created_at >= ? AND created_at < ?""",
@@ -514,7 +659,8 @@ class Database:
             ).fetchone()
 
             # Get breakdown by model
-            breakdown_rows = conn.execute(
+            breakdown_rows = self._execute_with_timing(
+                conn,
                 """SELECT model, SUM(cost_usd) as total, COUNT(*) as count
                    FROM message_costs
                    WHERE user_id = ? AND created_at >= ? AND created_at < ?
@@ -550,7 +696,8 @@ class Database:
             List of dicts with 'year', 'month', 'total_usd', 'message_count'
         """
         with self._get_conn() as conn:
-            rows = conn.execute(
+            rows = self._execute_with_timing(
+                conn,
                 """SELECT
                     strftime('%Y', created_at) as year,
                     strftime('%m', created_at) as month,

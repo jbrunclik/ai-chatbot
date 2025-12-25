@@ -40,7 +40,10 @@ class TestPydanticToErrorResponse:
         assert response["error"]["code"] == "VALIDATION_ERROR"
         assert response["error"]["retryable"] is False
         assert response["error"]["details"]["field"] == "name"
-        assert "name" in response["error"]["message"].lower() or "required" in response["error"]["message"].lower()
+        assert (
+            "name" in response["error"]["message"].lower()
+            or "required" in response["error"]["message"].lower()
+        )
 
     def test_type_error(self) -> None:
         """Should convert type error."""

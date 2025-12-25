@@ -187,7 +187,8 @@ class TestChatRequest:
     def test_both_message_and_files(self) -> None:
         """Should accept both message and files."""
         data = ChatRequest(
-            message="Check this", files=[{"name": "test.png", "type": "image/png", "data": "base64"}]
+            message="Check this",
+            files=[{"name": "test.png", "type": "image/png", "data": "base64"}],
         )
         assert data.message == "Check this"
         assert len(data.files) == 1

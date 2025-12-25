@@ -108,13 +108,13 @@ This file tracks planned features, improvements, and technical debt.
 
 ### 🟢 Database
 - [ ] **Database connection pooling** - Consider connection pooling for SQLite (though SQLite has limitations)
-- [ ] **Add database indexes** - Add indexes on frequently queried columns (conversations.user_id, messages.conversation_id, etc.)
-- [ ] **Add database query optimization** - Review and optimize N+1 query patterns (e.g., loading conversations with message counts)
+- [x] **Add database indexes** - Add indexes on frequently queried columns (conversations.user_id, messages.conversation_id, etc.)
+- [x] **Add database query optimization** - Review and optimize N+1 query patterns (e.g., loading conversations with message counts) - Reviewed, no N+1 patterns found
 - [ ] **Pagination for conversations** - Add pagination to conversations list endpoint for users with many conversations
 - [ ] **Add database backup automation** - Automated daily backups of SQLite database
 - [ ] **Add database vacuum** - Periodic SQLite VACUUM to reclaim space and optimize database
-- [ ] **Add database query logging** - Log slow queries for optimization (in development/debug mode)
-- [ ] **Add database connectivity check** - Verify database is accessible at startup with clear error message
+- [x] **Add database query logging** - Log slow queries for optimization (in development/debug mode)
+- [x] **Add database connectivity check** - Verify database is accessible at startup with clear error message
 
 ### 🔵 Frontend Performance & UX
 - [ ] **Allow switching conversations without interrupting active requests/SSE** - Currently, switching to a different conversation kills any active streaming requests or SSE connections. Allow multiple conversations to have active requests simultaneously, so users can switch between conversations without losing progress on ongoing responses.

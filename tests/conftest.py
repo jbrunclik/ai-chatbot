@@ -28,7 +28,7 @@ os.environ["ALLOWED_EMAILS"] = "test@example.com,allowed@example.com"
 
 
 @pytest.fixture(scope="session")
-def temp_db_dir() -> Generator[Path, None, None]:
+def temp_db_dir() -> Generator[Path]:
     """Create a temporary directory for test databases."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield Path(tmpdir)
@@ -43,7 +43,7 @@ def test_db_path(temp_db_dir: Path, request: pytest.FixtureRequest) -> Path:
 
 
 @pytest.fixture
-def test_database(test_db_path: Path) -> Generator["Database", None, None]:
+def test_database(test_db_path: Path) -> Generator[Database]:
     """Create isolated test database for each test."""
     from src.db.models import Database
 
@@ -58,7 +58,7 @@ def test_database(test_db_path: Path) -> Generator["Database", None, None]:
 
 
 @pytest.fixture
-def app(test_database: "Database") -> Generator[Flask, None, None]:
+def app(test_database: Database) -> Generator[Flask]:
     """Create Flask test application with isolated database.
 
     Uses test_database fixture to ensure same db instance is shared
@@ -86,7 +86,7 @@ def client(app: Flask) -> FlaskClient:
 
 
 @pytest.fixture
-def test_user(test_database: "Database") -> "User":
+def test_user(test_database: Database) -> User:
     """Create test user in database."""
     return test_database.get_or_create_user(
         email="test@example.com",
@@ -96,7 +96,7 @@ def test_user(test_database: "Database") -> "User":
 
 
 @pytest.fixture
-def auth_token(test_user: "User") -> str:
+def auth_token(test_user: User) -> str:
     """Generate valid JWT token for test user."""
     from src.auth.jwt_auth import create_token
 
@@ -115,7 +115,7 @@ def auth_headers(auth_token: str) -> dict[str, str]:
 
 
 @pytest.fixture
-def test_conversation(test_database: "Database", test_user: "User") -> "Conversation":
+def test_conversation(test_database: Database, test_user: User) -> Conversation:
     """Create test conversation."""
     return test_database.create_conversation(
         user_id=test_user.id,
@@ -130,7 +130,7 @@ def test_conversation(test_database: "Database", test_user: "User") -> "Conversa
 
 
 @pytest.fixture
-def mock_gemini_llm() -> Generator[MagicMock, None, None]:
+def mock_gemini_llm() -> Generator[MagicMock]:
     """Mock ChatGoogleGenerativeAI to avoid real API calls."""
     with patch("src.agent.chat_agent.ChatGoogleGenerativeAI") as mock:
         mock_instance = MagicMock()
@@ -144,14 +144,14 @@ def mock_gemini_llm() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def mock_genai_client() -> Generator[MagicMock, None, None]:
+def mock_genai_client() -> Generator[MagicMock]:
     """Mock genai.Client for image generation."""
     with patch("src.agent.tools.genai.Client") as mock:
         yield mock
 
 
 @pytest.fixture
-def mock_ddgs() -> Generator[MagicMock, None, None]:
+def mock_ddgs() -> Generator[MagicMock]:
     """Mock DuckDuckGo search."""
     with patch("src.agent.tools.DDGS") as mock:
         mock_instance = MagicMock()
@@ -169,7 +169,7 @@ def mock_ddgs() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def mock_httpx() -> Generator[MagicMock, None, None]:
+def mock_httpx() -> Generator[MagicMock]:
     """Mock httpx for URL fetching."""
     with patch("src.agent.tools.httpx.Client") as mock:
         mock_instance = MagicMock()
@@ -186,7 +186,7 @@ def mock_httpx() -> Generator[MagicMock, None, None]:
 
 
 @pytest.fixture
-def mock_google_tokeninfo() -> Generator[MagicMock, None, None]:
+def mock_google_tokeninfo() -> Generator[MagicMock]:
     """Mock Google tokeninfo endpoint."""
     with patch("src.auth.google_auth.requests.get") as mock:
         mock_response = MagicMock()

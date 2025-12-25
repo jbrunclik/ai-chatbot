@@ -52,6 +52,9 @@ class Config:
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
+    # Slow query logging (only active in development/debug mode)
+    SLOW_QUERY_THRESHOLD_MS: int = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "100"))
+
     # Cost tracking
     COST_CURRENCY: str = os.getenv("COST_CURRENCY", "CZK").upper()  # Default to CZK
 

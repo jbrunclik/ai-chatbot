@@ -4,7 +4,6 @@ import base64
 import io
 import json
 
-import pytest
 from PIL import Image
 
 from src.utils.images import (
@@ -171,9 +170,7 @@ class TestExtractGeneratedImagesFromToolResults:
 
     def test_skips_non_image_tool_results(self) -> None:
         """Non-image tool results should be skipped."""
-        tool_results = [
-            {"type": "tool", "content": json.dumps({"query": "test", "results": []})}
-        ]
+        tool_results = [{"type": "tool", "content": json.dumps({"query": "test", "results": []})}]
 
         files = extract_generated_images_from_tool_results(tool_results)
         assert files == []
@@ -212,9 +209,7 @@ class TestExtractGeneratedImagesFromToolResults:
         tool_results = [
             {
                 "type": "tool",
-                "content": json.dumps(
-                    {"success": True, "_full_result": {"other": "data"}}
-                ),
+                "content": json.dumps({"success": True, "_full_result": {"other": "data"}}),
             }
         ]
 
@@ -229,9 +224,7 @@ class TestExtractGeneratedImagesFromToolResults:
                 "content": json.dumps(
                     {
                         "success": True,
-                        "_full_result": {
-                            "image": {"data": "image1data", "mime_type": "image/png"}
-                        },
+                        "_full_result": {"image": {"data": "image1data", "mime_type": "image/png"}},
                     }
                 ),
             },

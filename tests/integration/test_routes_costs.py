@@ -18,21 +18,19 @@ class TestGetConversationCost:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
-        test_user: "User",
+        test_conversation: Conversation,
+        test_database: Database,
+        test_user: User,
     ) -> None:
         """Should return total cost for conversation."""
         # Add messages with costs
         msg1 = test_database.add_message(test_conversation.id, "assistant", "R1")
         msg2 = test_database.add_message(test_conversation.id, "assistant", "R2")
         test_database.save_message_cost(
-            msg1.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.01
+            msg1.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.01
         )
         test_database.save_message_cost(
-            msg2.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 200, 100, 0.02
+            msg2.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 200, 100, 0.02
         )
 
         response = client.get(
@@ -49,7 +47,7 @@ class TestGetConversationCost:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 0 when no cost data exists."""
         response = client.get(
@@ -72,9 +70,7 @@ class TestGetConversationCost:
 
         assert response.status_code == 404
 
-    def test_requires_auth(
-        self, client: FlaskClient, test_conversation: "Conversation"
-    ) -> None:
+    def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.get(f"/api/conversations/{test_conversation.id}/cost")
         assert response.status_code == 401
@@ -87,16 +83,21 @@ class TestGetMessageCost:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
-        test_user: "User",
+        test_conversation: Conversation,
+        test_database: Database,
+        test_user: User,
     ) -> None:
         """Should return cost details for specific message."""
         msg = test_database.add_message(test_conversation.id, "assistant", "Response")
         test_database.save_message_cost(
-            msg.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 1000, 500, 0.05,
-            image_generation_cost_usd=0.02
+            msg.id,
+            test_conversation.id,
+            test_user.id,
+            "gemini-3-flash-preview",
+            1000,
+            500,
+            0.05,
+            image_generation_cost_usd=0.02,
         )
 
         response = client.get(
@@ -116,8 +117,8 @@ class TestGetMessageCost:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
+        test_conversation: Conversation,
+        test_database: Database,
     ) -> None:
         """Should return 404 when message has no cost data."""
         msg = test_database.add_message(test_conversation.id, "assistant", "Response")
@@ -132,8 +133,8 @@ class TestGetMessageCost:
     def test_requires_auth(
         self,
         client: FlaskClient,
-        test_conversation: "Conversation",
-        test_database: "Database",
+        test_conversation: Conversation,
+        test_database: Database,
     ) -> None:
         """Should return 401 without authentication."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R")
@@ -149,15 +150,14 @@ class TestGetMonthlyCost:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
-        test_user: "User",
+        test_conversation: Conversation,
+        test_database: Database,
+        test_user: User,
     ) -> None:
         """Should return cost for current month."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R1")
         test_database.save_message_cost(
-            msg.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.05
+            msg.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.05
         )
 
         response = client.get(
@@ -212,15 +212,14 @@ class TestGetCostHistory:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
-        test_user: "User",
+        test_conversation: Conversation,
+        test_database: Database,
+        test_user: User,
     ) -> None:
         """Should return monthly cost history."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R1")
         test_database.save_message_cost(
-            msg.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.05
+            msg.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.05
         )
 
         response = client.get(
