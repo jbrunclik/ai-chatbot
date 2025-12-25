@@ -1,0 +1,261 @@
+"""Unit tests for configuration validation."""
+
+import os
+from unittest.mock import patch
+
+import pytest
+
+
+class TestConfigValidation:
+    """Tests for Config.validate() method."""
+
+    def test_missing_gemini_api_key(self) -> None:
+        """Should require GEMINI_API_KEY."""
+        # Reset module to pick up new env vars
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            # Reimport to get fresh config with patched env
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("GEMINI_API_KEY" in e for e in errors)
+
+    def test_production_requires_google_client_id(self) -> None:
+        """Should require GOOGLE_CLIENT_ID in production."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "production",
+                "GEMINI_API_KEY": "test-key",
+                "GOOGLE_CLIENT_ID": "",
+                "ALLOWED_EMAILS": "test@example.com",
+                "JWT_SECRET_KEY": "secure-production-key",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("GOOGLE_CLIENT_ID" in e for e in errors)
+
+    def test_production_requires_allowed_emails(self) -> None:
+        """Should require ALLOWED_EMAILS in production."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "production",
+                "GEMINI_API_KEY": "test-key",
+                "GOOGLE_CLIENT_ID": "test-client-id",
+                "ALLOWED_EMAILS": "",
+                "JWT_SECRET_KEY": "secure-production-key",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("ALLOWED_EMAILS" in e for e in errors)
+
+    def test_production_requires_secure_jwt_secret(self) -> None:
+        """Should require secure JWT_SECRET_KEY in production."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "production",
+                "GEMINI_API_KEY": "test-key",
+                "GOOGLE_CLIENT_ID": "test-client-id",
+                "ALLOWED_EMAILS": "test@example.com",
+                "JWT_SECRET_KEY": "dev-secret-change-me",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("JWT_SECRET_KEY" in e for e in errors)
+
+    def test_development_mode_skips_auth_validation(self) -> None:
+        """Should not require auth config in development mode."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "development",
+                "GEMINI_API_KEY": "test-key",
+                "GOOGLE_CLIENT_ID": "",
+                "ALLOWED_EMAILS": "",
+                "JWT_SECRET_KEY": "dev-secret-change-me",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            # Should not have auth-related errors in development mode
+            assert not any("GOOGLE_CLIENT_ID" in e for e in errors)
+            assert not any("ALLOWED_EMAILS" in e for e in errors)
+            assert not any("JWT_SECRET_KEY" in e for e in errors)
+
+    def test_invalid_port(self) -> None:
+        """Should reject invalid PORT values."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "development",
+                "GEMINI_API_KEY": "test-key",
+                "PORT": "99999",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("PORT" in e for e in errors)
+
+    def test_invalid_currency(self) -> None:
+        """Should reject unsupported currencies."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "development",
+                "GEMINI_API_KEY": "test-key",
+                "COST_CURRENCY": "XYZ",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("COST_CURRENCY" in e for e in errors)
+
+    def test_invalid_log_level(self) -> None:
+        """Should reject invalid LOG_LEVEL values."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "development",
+                "GEMINI_API_KEY": "test-key",
+                "LOG_LEVEL": "INVALID",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert any("LOG_LEVEL" in e for e in errors)
+
+    def test_valid_config_development(self) -> None:
+        """Should pass validation with valid development config."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "development",
+                "GEMINI_API_KEY": "test-key",
+                "PORT": "8000",
+                "COST_CURRENCY": "USD",
+                "LOG_LEVEL": "INFO",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert len(errors) == 0
+
+    def test_valid_config_production(self) -> None:
+        """Should pass validation with valid production config."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "production",
+                "GEMINI_API_KEY": "test-key",
+                "GOOGLE_CLIENT_ID": "test-client-id",
+                "ALLOWED_EMAILS": "test@example.com",
+                "JWT_SECRET_KEY": "secure-production-key-12345",
+                "PORT": "8000",
+                "COST_CURRENCY": "CZK",
+                "LOG_LEVEL": "WARNING",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            assert len(errors) == 0
+
+    def test_error_messages_are_helpful(self) -> None:
+        """Error messages should include guidance on how to fix."""
+        with patch.dict(
+            os.environ,
+            {
+                "FLASK_ENV": "production",
+                "GEMINI_API_KEY": "",
+            },
+        ):
+            from importlib import reload
+
+            import src.config
+
+            reload(src.config)
+            from src.config import Config
+
+            errors = Config.validate()
+            # Should include URL for getting API key
+            gemini_error = next(e for e in errors if "GEMINI_API_KEY" in e)
+            assert "https://" in gemini_error or "ai.google.dev" in gemini_error
+
+
+@pytest.fixture(autouse=True)
+def reset_config_after_test() -> None:
+    """Reset config module after each test to avoid pollution."""
+    yield
+    # Restore test environment for other tests
+    os.environ["FLASK_ENV"] = "testing"
+    os.environ["GEMINI_API_KEY"] = "test-api-key"
+    os.environ["GOOGLE_CLIENT_ID"] = "test-client-id"
+    os.environ["JWT_SECRET_KEY"] = "test-secret-key-for-testing-only"
+    os.environ["ALLOWED_EMAILS"] = "test@example.com,allowed@example.com"
+    from importlib import reload
+
+    import src.config
+
+    reload(src.config)

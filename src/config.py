@@ -162,18 +162,62 @@ class Config:
 
     @classmethod
     def validate(cls) -> list[str]:
-        """Validate required configuration. Returns list of errors."""
+        """Validate required configuration. Returns list of errors with clear guidance."""
         errors: list[str] = []
 
+        # Always required
         if not cls.GEMINI_API_KEY:
-            errors.append("GEMINI_API_KEY is required")
+            errors.append(
+                "GEMINI_API_KEY is required. "
+                "Get your API key from https://ai.google.dev/ and set it in .env"
+            )
 
+        # Production-only requirements
         if not cls.is_development():
             if not cls.GOOGLE_CLIENT_ID:
-                errors.append("GOOGLE_CLIENT_ID is required (or set FLASK_ENV=development)")
+                errors.append(
+                    "GOOGLE_CLIENT_ID is required in production. "
+                    "Set up OAuth at https://console.cloud.google.com/apis/credentials "
+                    "or set FLASK_ENV=development to skip authentication"
+                )
             if not cls.ALLOWED_EMAILS:
-                errors.append("ALLOWED_EMAILS is required (or set FLASK_ENV=development)")
+                errors.append(
+                    "ALLOWED_EMAILS is required in production. "
+                    "Set a comma-separated list of allowed email addresses "
+                    "or set FLASK_ENV=development to skip authentication"
+                )
             if cls.JWT_SECRET_KEY == "dev-secret-change-me":
-                errors.append("JWT_SECRET_KEY must be set to a secure value in production")
+                errors.append(
+                    "JWT_SECRET_KEY must be set to a secure random value in production. "
+                    'Generate one with: python -c "import secrets; print(secrets.token_hex(32))"'
+                )
+
+        # Validate numeric ranges
+        if cls.PORT < 1 or cls.PORT > 65535:
+            errors.append(f"PORT must be between 1 and 65535, got {cls.PORT}")
+
+        if cls.MAX_FILE_SIZE < 1:
+            errors.append(f"MAX_FILE_SIZE must be positive, got {cls.MAX_FILE_SIZE}")
+
+        if cls.MAX_FILES_PER_MESSAGE < 1:
+            errors.append(
+                f"MAX_FILES_PER_MESSAGE must be at least 1, got {cls.MAX_FILES_PER_MESSAGE}"
+            )
+
+        # Validate currency
+        if cls.COST_CURRENCY not in cls.CURRENCY_RATES:
+            valid_currencies = ", ".join(sorted(cls.CURRENCY_RATES.keys()))
+            errors.append(
+                f"COST_CURRENCY '{cls.COST_CURRENCY}' is not supported. "
+                f"Valid currencies: {valid_currencies}"
+            )
+
+        # Validate log level
+        valid_log_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if cls.LOG_LEVEL not in valid_log_levels:
+            errors.append(
+                f"LOG_LEVEL '{cls.LOG_LEVEL}' is not valid. "
+                f"Valid levels: {', '.join(sorted(valid_log_levels))}"
+            )
 
         return errors
