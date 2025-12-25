@@ -2,7 +2,10 @@ import { getElementById } from '../utils/dom';
 import { useStore } from '../state/store';
 import { renderFilePreview, updateSendButtonState } from './MessageInput';
 import { toast } from './Toast';
+import { createLogger } from '../utils/logger';
 import type { FileUpload } from '../types/api';
+
+const log = createLogger('file-upload');
 
 /**
  * Initialize file upload handlers
@@ -69,6 +72,7 @@ export function initFileUpload(): void {
  * Add files to pending upload queue
  */
 async function addFilesToPending(files: File[]): Promise<void> {
+  log.debug('Processing files for upload', { count: files.length });
   const store = useStore.getState();
   const { uploadConfig, pendingFiles } = store;
 
@@ -105,8 +109,9 @@ async function addFilesToPending(files: File[]): Promise<void> {
       };
 
       store.addPendingFile(fileUpload);
+      log.debug('File added', { fileName: file.name, fileType: file.type, fileSize: file.size });
     } catch (error) {
-      console.error('Failed to read file:', error);
+      log.error('Failed to read file', { error, fileName: file.name });
       toast.error(`Failed to read file '${file.name}'`);
     }
   }

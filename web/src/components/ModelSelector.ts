@@ -2,6 +2,9 @@ import { escapeHtml, getElementById } from '../utils/dom';
 import { useStore } from '../state/store';
 import { conversations as conversationsApi } from '../api/client';
 import { toast } from './Toast';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('model-selector');
 
 /**
  * Initialize model selector event handlers
@@ -81,7 +84,7 @@ async function selectModel(modelId: string): Promise<void> {
       await conversationsApi.update(currentConversation.id, { model: modelId });
       store.updateConversation(currentConversation.id, { model: modelId });
     } catch (error) {
-      console.error('Failed to update model:', error);
+      log.error('Failed to update model', { error, modelId, conversationId: currentConversation.id });
       // Revert optimistic update on failure
       if (previousModel) {
         updateCurrentModelDisplay(previousModel.name);

@@ -65,7 +65,8 @@ ai-chatbot/
 │       │   ├── dom.ts            # DOM helpers, escapeHtml
 │       │   ├── markdown.ts       # marked + highlight.js, table scroll wrapper
 │       │   ├── thumbnails.ts     # Intersection Observer lazy loading
-│       │   └── icons.ts          # SVG icon constants
+│       │   ├── icons.ts          # SVG icon constants
+│       │   └── logger.ts         # Structured logging utility
 │       └── styles/main.css       # Dark theme, responsive layout
 └── static/                       # Build output + PWA assets
     ├── assets/                   # Vite output (hashed JS/CSS)
@@ -1120,6 +1121,50 @@ def my_function(user_id: str, data: dict) -> None:
 - **Database**: CRUD operations, state saves
 - **Auth**: Token validation, user lookups
 - **File processing**: Validation, thumbnail generation
+
+### Frontend Logging
+
+The frontend uses a structured logging utility similar to the backend, providing consistent logging across the application.
+
+**Configuration:**
+- Log level is configured in [config.ts](web/src/config.ts) via `LOG_LEVEL`
+- In development: defaults to `debug` (all logs shown)
+- In production: defaults to `warn` (only warnings and errors)
+- Can be overridden at runtime via `window.__LOG_LEVEL__`
+
+**Log Levels:**
+- `debug`: Detailed information for troubleshooting (dev only by default)
+- `info`: Important operations and state changes
+- `warn`: Unusual but recoverable situations
+- `error`: Failures that need attention
+
+**Usage:**
+```typescript
+import { createLogger } from './utils/logger';
+
+const log = createLogger('my-module');
+
+log.debug('Function called', { userId, data });
+log.info('Operation completed', { result });
+log.warn('Unexpected state', { state });
+log.error('Operation failed', { error, context });
+```
+
+**Output:**
+- Development: Colored console output with `[module-name]` prefix for readability
+- Production: JSON-formatted output for log aggregation
+
+**Key Files:**
+- [logger.ts](web/src/utils/logger.ts) - Logger utility with `createLogger()` factory
+- [config.ts](web/src/config.ts) - `LOG_LEVEL` configuration
+
+**Guidelines:**
+- Create a named logger per module: `const log = createLogger('module-name')`
+- Use `debug` for detailed troubleshooting info (retry attempts, state changes)
+- Use `info` for significant events (auth success, version banner shown)
+- Use `warn` for recoverable issues (cost fetch failed, optional feature unavailable)
+- Use `error` for failures that affect functionality (API errors, file read failures)
+- Always include relevant context as the second argument (error objects, IDs, etc.)
 
 ## Database Performance & Monitoring
 

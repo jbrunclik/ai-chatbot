@@ -102,7 +102,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Add request timeout handling** - CHAT_TIMEOUT (5 min) for batch requests, DEFAULT_TIMEOUT (30s) for other requests. Streaming needs per-read timeout (TODO).
 - [x] **TypeScript migration** - Frontend migrated to TypeScript with strict mode
 - [x] **Extract magic numbers and strings to constants** - Created centralized `constants.{ts,py}` for unit conversions and `config.{ts,py}` for developer-configurable values. See CLAUDE.md "Constants and Configuration" section for guidelines.
-- [ ] **Remove console.log statements** - Implement structured frontend logging (console statements remain for debugging)
+- [x] **Remove console.log statements** - Implemented structured frontend logging in `web/src/utils/logger.ts` with `createLogger()` factory. All console statements replaced with structured logs. See CLAUDE.md "Frontend Logging" section.
 - [ ] **Reduce innerHTML usage** - Heavy reliance on innerHTML; prefer textContent and createElement where possible
 - [ ] **Audit unused CSS classes** - After TypeScript migration, review and remove unused CSS classes from main.css
 - [ ] **Create design system / color palette** - Consolidate purple/blue shades into named CSS variables. Currently using multiple similar colors: `--accent` (#6366f1), `--accent-hover` (#818cf8), `--user-bg` (#2563eb), version banner (#3730a3, #1e1b4b), assistant avatar gradient. Define a consistent palette with semantic names.

@@ -20,7 +20,10 @@ import {
 } from '../utils/icons';
 import { costs } from '../api/client';
 import { useStore } from '../state/store';
+import { createLogger } from '../utils/logger';
 import type { Message, FileMetadata, Source, GeneratedImage } from '../types/api';
+
+const log = createLogger('messages');
 
 /**
  * Format a timestamp for display using system locale
@@ -57,6 +60,7 @@ function formatMessageTime(isoString: string): string {
  * Render all messages in the container
  */
 export function renderMessages(messages: Message[]): void {
+  log.debug('Rendering messages', { count: messages.length });
   const container = getElementById<HTMLDivElement>('messages');
   if (!container) return;
 
@@ -249,7 +253,7 @@ export function addMessageToUI(
           })
         );
       } catch (error) {
-        console.warn('Failed to fetch message cost:', error);
+        log.warn('Failed to fetch message cost', { error, messageId: message.id });
         // Silently fail - cost display is optional
       }
     });
@@ -509,7 +513,7 @@ export function finalizeStreamingMessage(
             })
           );
         } catch (error) {
-          console.warn('Failed to fetch message cost:', error);
+          log.warn('Failed to fetch message cost', { error, messageId });
           // Silently fail - cost display is optional
         }
       });

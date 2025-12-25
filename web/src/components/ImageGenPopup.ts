@@ -3,6 +3,9 @@ import { escapeHtml } from '../utils/dom';
 import { SPARKLES_ICON } from '../utils/icons';
 import { createPopup, type PopupInstance } from './InfoPopup';
 import { costs } from '../api/client';
+import { createLogger } from '../utils/logger';
+
+const log = createLogger('imagegen');
 
 /**
  * Render generated images info HTML
@@ -67,7 +70,7 @@ export function initImageGenPopup(): void {
           }
         } catch (error) {
           // Silently fail - cost display is optional
-          console.warn('Failed to fetch message cost for image gen popup:', error);
+          log.warn('Failed to fetch message cost for image gen popup', { error });
           costPlaceholder.remove();
         }
       }

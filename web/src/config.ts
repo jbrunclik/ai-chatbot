@@ -225,3 +225,40 @@ export const UPLOAD_ALLOWED_TYPES = [
 
 /** Default conversation title for new conversations */
 export const DEFAULT_CONVERSATION_TITLE = 'New Conversation';
+
+// =============================================================================
+// Logging
+// =============================================================================
+
+/** Available log levels */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** Log level priority (higher = more severe) */
+export const LOG_LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
+/**
+ * Current log level.
+ * In development mode, defaults to 'debug' to show all logs.
+ * In production, defaults to 'warn' to reduce noise.
+ * Can be overridden by setting window.__LOG_LEVEL__ before app loads.
+ */
+export const LOG_LEVEL: LogLevel = (() => {
+  // Allow runtime override via window property
+  if (
+    typeof window !== 'undefined' &&
+    '__LOG_LEVEL__' in window &&
+    typeof (window as Record<string, unknown>).__LOG_LEVEL__ === 'string'
+  ) {
+    const level = (window as Record<string, unknown>).__LOG_LEVEL__ as string;
+    if (level in LOG_LEVELS) {
+      return level as LogLevel;
+    }
+  }
+  // Default based on environment
+  return import.meta.env.DEV ? 'debug' : 'warn';
+})();
