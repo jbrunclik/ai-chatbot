@@ -60,7 +60,7 @@ This file tracks planned features, improvements, and technical debt.
 
 ## CI/CD & DevOps
 - [x] **GitHub Actions** - Workflow for linting and testing on PRs (runs backend + frontend tests)
-- [ ] **Dependabot** - Configuration for automated dependency updates
+- [x] **Dependabot** - Configuration for automated dependency updates (pip, npm, github-actions)
 - [ ] Docker image and docker-compose setup
 
 ## Technical Debt

@@ -32,7 +32,6 @@ build/
 
 # Node.js
 node_modules/
-package-lock.json
 
 # Vite build output (generated during deployment)
 static/assets/
