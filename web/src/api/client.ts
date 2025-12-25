@@ -44,6 +44,10 @@ class ApiError extends Error {
   isTimeout: boolean;
   /** Whether this is a network error (no response) */
   isNetworkError: boolean;
+  /** Whether this is an authentication error (requires re-auth) */
+  isAuthError: boolean;
+  /** Whether the token has expired (subset of auth errors) */
+  isTokenExpired: boolean;
 
   constructor(
     message: string,
@@ -62,6 +66,9 @@ class ApiError extends Error {
     this.retryable = options.retryable ?? RETRYABLE_STATUS_CODES.includes(status);
     this.isTimeout = options.isTimeout ?? false;
     this.isNetworkError = options.isNetworkError ?? false;
+    // Auth error detection based on error codes
+    this.isTokenExpired = options.code === 'AUTH_EXPIRED';
+    this.isAuthError = status === 401 || ['AUTH_REQUIRED', 'AUTH_INVALID', 'AUTH_EXPIRED'].includes(options.code || '');
   }
 }
 
@@ -277,6 +284,14 @@ export const auth = {
   async me(): Promise<User> {
     const data = await requestWithRetry<{ user: User }>('/auth/me');
     return data.user;
+  },
+
+  async refreshToken(): Promise<string> {
+    // POST - no retry (not idempotent, creates new token)
+    const data = await request<{ token: string }>('/auth/refresh', {
+      method: 'POST',
+    });
+    return data.token;
   },
 };
 

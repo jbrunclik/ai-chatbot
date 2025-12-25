@@ -66,13 +66,13 @@ This file tracks planned features, improvements, and technical debt.
 ## Technical Debt
 
 ### 🔴 Connection Resilience (Slow/Unreliable Networks)
-- [ ] **Save streaming responses on connection failure** - If SSE connection drops mid-stream, the assistant's partial response is lost (user message saved, assistant message not). Server should save responses incrementally or persist partial responses in a cleanup handler.
+- [x] **Save streaming responses on connection failure** - Implemented via cleanup thread that saves message to DB even if client disconnects mid-stream. See `cleanup_and_save()` in routes.py.
 - [x] **Push title updates in streaming `done` event** - The `done` SSE event now includes `title` field when a title is auto-generated. Client uses title directly from response, falling back to API call only if not present.
 - [x] **Add retry logic for failed API calls** - Frontend automatically retries GET requests with exponential backoff. POST requests show toast with manual retry button.
 - [ ] **Detect and handle offline state** - Show offline indicator when network is unavailable. Queue messages locally and sync when connection returns.
 - [ ] **Handle partial file uploads** - Large file uploads can fail mid-transfer. Consider chunked uploads with resume capability, or at minimum show clear error and allow retry.
 - [ ] **Add connection quality indicator** - Show visual feedback when connection is slow (e.g., SSE keepalives arriving but no tokens for extended period).
-- [ ] **Handle stale JWT on reconnect** - If user's connection drops and reconnects after JWT expires, gracefully prompt re-auth instead of failing silently.
+- [x] **Handle stale JWT on reconnect** - Frontend detects `AUTH_EXPIRED` error code and shows toast prompting re-login instead of failing silently.
 - [x] **Persist unsent messages locally** - Draft messages preserved in store and restored on send failure.
 - [ ] **Real-time data synchronization** - Implement mechanism to notify clients about new data (e.g., messages appearing in a chat after losing connectivity, new conversations created on different devices). Options: WebSockets for bidirectional, SSE for server-to-client updates, or polling with efficient change detection. Should handle reconnection and sync missed updates.
 
@@ -85,7 +85,7 @@ This file tracks planned features, improvements, and technical debt.
 ### 🟠 Security
 - [ ] **Add server-side file type validation** - File upload relies on client MIME type. Add magic bytes verification using `python-magic`.
 - [ ] **Add request size limits** - Enforce request body size limits in Flask to prevent DoS
-- [ ] **Improve JWT token handling** - Add token refresh mechanism instead of fixed expiration; consider enforcing minimum secret length (32+ chars)
+- [x] **Improve JWT token handling** - Added token refresh mechanism (proactive refresh when 2 days remain) and enforced minimum secret length (32+ chars in production)
 - [ ] **Add CORS configuration** - Explicitly configure CORS if needed for cross-origin requests
 
 ### 🟡 Code Quality
@@ -118,7 +118,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Add database connectivity check** - Verify database is accessible at startup with clear error message
 
 ### 🔵 Frontend Performance & UX
-- [ ] **Allow switching conversations without interrupting active requests/SSE** - Currently, switching to a different conversation kills any active streaming requests or SSE connections. Allow multiple conversations to have active requests simultaneously, so users can switch between conversations without losing progress on ongoing responses.
+- [x] **Allow switching conversations without interrupting active requests/SSE** - Requests continue in background when switching conversations. UI guards with `isCurrentConversation` checks prevent updates to wrong conversation. See "Concurrent Request Handling" in CLAUDE.md.
 - [ ] **iPad Safari keyboard bar gap** - When focusing input on iPad with external keyboard, the system keyboard accessory bar pushes content up, revealing a gap below the app. CSS cannot paint outside the viewport iOS reveals. Need to investigate workarounds.
 - [x] **Replace native browser dialogs** - Custom Modal component (showAlert, showConfirm, showPrompt) replaces all native dialogs. Toast notifications for transient messages.
 - [x] **Frontend bundle optimization** - Migrated to Vite, bundles marked.js and highlight.js from npm

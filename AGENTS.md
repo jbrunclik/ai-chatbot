@@ -135,6 +135,38 @@ Uses Google Identity Services (GIS) for client-side authentication:
    - Backend validates token via Google's tokeninfo endpoint
    - Backend checks email whitelist, returns JWT
    - Frontend stores JWT for subsequent API calls
+   - Frontend schedules automatic token refresh before expiration
+
+### JWT Token Handling
+
+**Token lifecycle:**
+- Tokens expire after 7 days (`JWT_EXPIRATION_HOURS = 168`)
+- Frontend automatically refreshes tokens when less than 2 days remain
+- This 48-hour window ensures users can skip a day without getting logged out
+- On page load, `checkAuth()` validates the token and schedules refresh
+- Token refresh uses `POST /auth/refresh` endpoint
+
+**Token security:**
+- In production, `JWT_SECRET_KEY` must be at least 32 characters
+- Config validation fails startup if secret is too short
+
+**Error codes:**
+The backend returns distinct error codes for authentication failures:
+- `AUTH_REQUIRED` (401): No token provided
+- `AUTH_EXPIRED` (401): Token has expired → prompts user to re-login
+- `AUTH_INVALID` (401): Token is malformed or signature is invalid
+- `AUTH_FORBIDDEN` (403): Valid auth but not authorized for resource
+
+**Frontend error handling:**
+- `ApiError.isTokenExpired`: True when backend returns `AUTH_EXPIRED`
+- `ApiError.isAuthError`: True for any 401 or auth-related error code
+- On token expiration, user sees a toast: "Your session has expired. Please sign in again."
+
+**Key files:**
+- [jwt_auth.py](src/auth/jwt_auth.py) - Token creation, validation, `decode_token_with_status()`
+- [google.ts](web/src/auth/google.ts) - `scheduleTokenRefresh()`, `checkAuth()`, `performTokenRefresh()`
+- [client.ts](web/src/api/client.ts) - `ApiError` with `isTokenExpired` and `isAuthError` properties
+- [routes.py](src/api/routes.py) - `/auth/refresh` endpoint
 
 ## Code Style
 

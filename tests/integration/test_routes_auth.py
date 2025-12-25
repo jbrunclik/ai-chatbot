@@ -1,10 +1,14 @@
 """Integration tests for authentication routes."""
 
 import json
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import jwt
 from flask.testing import FlaskClient
+
+from src.config import Config
 
 if TYPE_CHECKING:
     from src.db.models import User
@@ -144,3 +148,126 @@ class TestAuthClientIdRoute:
         # No auth headers
         response = client.get("/auth/client-id")
         assert response.status_code == 200
+
+
+class TestAuthRefreshRoute:
+    """Tests for POST /auth/refresh endpoint."""
+
+    def test_returns_new_token(
+        self, client: FlaskClient, auth_headers: dict[str, str], test_user: User
+    ) -> None:
+        """Should return a new JWT token with extended expiration."""
+        response = client.post("/auth/refresh", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "token" in data
+
+        # Verify the new token is valid and has correct claims
+        decoded = jwt.decode(
+            data["token"],
+            Config.JWT_SECRET_KEY,
+            algorithms=[Config.JWT_ALGORITHM],
+        )
+        assert decoded["sub"] == test_user.id
+        assert decoded["email"] == test_user.email
+
+    def test_new_token_has_extended_expiration(
+        self, client: FlaskClient, auth_headers: dict[str, str]
+    ) -> None:
+        """New token should have a fresh expiration time."""
+        response = client.post("/auth/refresh", headers=auth_headers)
+        data = json.loads(response.data)
+
+        decoded = jwt.decode(
+            data["token"],
+            Config.JWT_SECRET_KEY,
+            algorithms=[Config.JWT_ALGORITHM],
+        )
+
+        exp_time = datetime.fromtimestamp(decoded["exp"], tz=UTC)
+        now = datetime.now(UTC)
+        expected_exp = now + timedelta(hours=Config.JWT_EXPIRATION_HOURS)
+
+        # Allow 60 second tolerance for test execution time
+        assert abs((exp_time - expected_exp).total_seconds()) < 60
+
+    def test_requires_auth(self, client: FlaskClient) -> None:
+        """Should return 401 without auth token."""
+        response = client.post("/auth/refresh")
+
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["error"]["code"] == "AUTH_REQUIRED"
+
+    def test_returns_auth_expired_for_expired_token(
+        self, client: FlaskClient, test_user: User
+    ) -> None:
+        """Should return AUTH_EXPIRED error code for expired token."""
+        # Create an expired token
+        payload = {
+            "sub": test_user.id,
+            "email": test_user.email,
+            "name": test_user.name,
+            "exp": datetime.now(UTC) - timedelta(hours=1),
+            "iat": datetime.now(UTC) - timedelta(hours=2),
+        }
+        expired_token = jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM)
+
+        response = client.post(
+            "/auth/refresh",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["error"]["code"] == "AUTH_EXPIRED"
+        assert "expired" in data["error"]["message"].lower()
+
+
+class TestAuthErrorCodes:
+    """Tests for standardized auth error responses."""
+
+    def test_missing_token_returns_auth_required(self, client: FlaskClient) -> None:
+        """Missing token should return AUTH_REQUIRED error code."""
+        response = client.get("/auth/me")
+
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["error"]["code"] == "AUTH_REQUIRED"
+        assert data["error"]["retryable"] is False
+
+    def test_invalid_token_returns_auth_invalid(self, client: FlaskClient) -> None:
+        """Invalid/malformed token should return AUTH_INVALID error code."""
+        response = client.get(
+            "/auth/me",
+            headers={"Authorization": "Bearer invalid-token"},
+        )
+
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["error"]["code"] == "AUTH_INVALID"
+        assert data["error"]["retryable"] is False
+
+    def test_expired_token_returns_auth_expired(self, client: FlaskClient, test_user: User) -> None:
+        """Expired token should return AUTH_EXPIRED error code."""
+        # Create an expired token
+        payload = {
+            "sub": test_user.id,
+            "email": test_user.email,
+            "name": test_user.name,
+            "exp": datetime.now(UTC) - timedelta(hours=1),
+            "iat": datetime.now(UTC) - timedelta(hours=2),
+        }
+        expired_token = jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM)
+
+        response = client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {expired_token}"},
+        )
+
+        assert response.status_code == 401
+        data = json.loads(response.data)
+        assert data["error"]["code"] == "AUTH_EXPIRED"
+        assert "expired" in data["error"]["message"].lower()
+        assert data["error"]["retryable"] is False

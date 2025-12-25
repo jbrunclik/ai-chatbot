@@ -1,16 +1,40 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from functools import wraps
 from typing import Any
 
 import jwt
-from flask import Request, g, jsonify, request
+from flask import Request, g, request
 
+from src.api.errors import (
+    auth_expired_error,
+    auth_invalid_error,
+    auth_required_error,
+)
 from src.config import Config
 from src.db.models import User, db
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class TokenStatus(Enum):
+    """Status codes for token validation results."""
+
+    VALID = "valid"
+    EXPIRED = "expired"
+    INVALID = "invalid"
+
+
+@dataclass
+class TokenResult:
+    """Result of token validation."""
+
+    status: TokenStatus
+    payload: dict[str, Any] | None = None
+    error: str | None = None
 
 
 def create_token(user: User) -> str:
@@ -29,19 +53,33 @@ def create_token(user: User) -> str:
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
-    """Decode and validate a JWT token."""
+    """Decode and validate a JWT token.
+
+    Returns the payload dict if valid, None otherwise.
+    For detailed status information, use decode_token_with_status() instead.
+    """
+    result = decode_token_with_status(token)
+    return result.payload if result.status == TokenStatus.VALID else None
+
+
+def decode_token_with_status(token: str) -> TokenResult:
+    """Decode and validate a JWT token with detailed status.
+
+    Returns a TokenResult with status indicating whether the token is
+    valid, expired, or invalid, along with the payload or error message.
+    """
     try:
         payload: dict[str, Any] = jwt.decode(
             token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM]
         )
         logger.debug("JWT token decoded successfully", extra={"user_id": payload.get("sub")})
-        return payload
+        return TokenResult(status=TokenStatus.VALID, payload=payload)
     except jwt.ExpiredSignatureError:
         logger.warning("JWT token expired")
-        return None
+        return TokenResult(status=TokenStatus.EXPIRED, error="Token has expired")
     except jwt.InvalidTokenError as e:
         logger.warning("Invalid JWT token", extra={"error": str(e)})
-        return None
+        return TokenResult(status=TokenStatus.INVALID, error=str(e))
 
 
 def get_token_from_request(req: Request) -> str | None:
@@ -58,7 +96,14 @@ def get_current_user() -> User | None:
 
 
 def require_auth[F: Callable[..., Any]](f: F) -> F:
-    """Decorator to require authentication for a route."""
+    """Decorator to require authentication for a route.
+
+    Returns standardized error responses:
+    - AUTH_REQUIRED (401): No token provided
+    - AUTH_EXPIRED (401): Token has expired (prompts re-auth on frontend)
+    - AUTH_INVALID (401): Token is malformed or invalid
+    - NOT_FOUND (401): User associated with token no longer exists
+    """
 
     @wraps(f)
     def decorated(*args: Any, **kwargs: Any) -> Any:
@@ -76,24 +121,35 @@ def require_auth[F: Callable[..., Any]](f: F) -> F:
         token = get_token_from_request(request)
         if not token:
             logger.warning("Missing authentication token", extra={"path": request.path})
-            return jsonify({"error": "Missing authentication token"}), 401
+            return auth_required_error()
 
-        payload = decode_token(token)
-        if not payload:
-            logger.warning("Invalid or expired token", extra={"path": request.path})
-            return jsonify({"error": "Invalid or expired token"}), 401
+        # Use decode_token_with_status to distinguish expired from invalid
+        result = decode_token_with_status(token)
+
+        if result.status == TokenStatus.EXPIRED:
+            logger.warning("Token expired", extra={"path": request.path})
+            return auth_expired_error("Your session has expired. Please sign in again.")
+
+        if result.status == TokenStatus.INVALID:
+            logger.warning("Invalid token", extra={"path": request.path, "error": result.error})
+            return auth_invalid_error("Invalid authentication token")
+
+        # Token is valid, extract user info
+        payload = result.payload
+        assert payload is not None  # Guaranteed by VALID status
 
         user_id = payload.get("sub")
         if not user_id:
             logger.warning("Invalid token payload - missing sub", extra={"path": request.path})
-            return jsonify({"error": "Invalid token payload"}), 401
+            return auth_invalid_error("Invalid token payload")
 
         user = db.get_user_by_id(user_id)
         if not user:
             logger.warning(
                 "User not found for token", extra={"user_id": user_id, "path": request.path}
             )
-            return jsonify({"error": "User not found"}), 401
+            # Use 401 for user not found (token is valid but user was deleted)
+            return auth_invalid_error("User account not found")
 
         g.current_user = user
         logger.debug("Authentication successful", extra={"user_id": user_id, "path": request.path})

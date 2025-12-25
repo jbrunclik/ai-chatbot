@@ -606,6 +606,104 @@ describe('API Client', () => {
         expect((e as ApiError).message).toBe('Forbidden');
       }
     });
+
+    it('detects AUTH_EXPIRED error code', async () => {
+      global.fetch = mockFetchResponse(
+        { error: { code: 'AUTH_EXPIRED', message: 'Token expired' } },
+        401
+      );
+
+      try {
+        await auth.me();
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).isTokenExpired).toBe(true);
+        expect((e as ApiError).isAuthError).toBe(true);
+        expect((e as ApiError).code).toBe('AUTH_EXPIRED');
+      }
+    });
+
+    it('detects AUTH_INVALID error code', async () => {
+      global.fetch = mockFetchResponse(
+        { error: { code: 'AUTH_INVALID', message: 'Invalid token' } },
+        401
+      );
+
+      try {
+        await auth.me();
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).isTokenExpired).toBe(false);
+        expect((e as ApiError).isAuthError).toBe(true);
+        expect((e as ApiError).code).toBe('AUTH_INVALID');
+      }
+    });
+
+    it('detects AUTH_REQUIRED error code', async () => {
+      global.fetch = mockFetchResponse(
+        { error: { code: 'AUTH_REQUIRED', message: 'Authentication required' } },
+        401
+      );
+
+      try {
+        await auth.me();
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).isAuthError).toBe(true);
+        expect((e as ApiError).code).toBe('AUTH_REQUIRED');
+      }
+    });
+
+    it('detects 401 status as auth error', async () => {
+      // Even without specific code, 401 should be detected as auth error
+      global.fetch = mockFetchResponse({ error: 'Unauthorized' }, 401);
+
+      try {
+        await auth.me();
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).isAuthError).toBe(true);
+        expect((e as ApiError).status).toBe(401);
+      }
+    });
+  });
+
+  describe('auth.refreshToken', () => {
+    it('refreshes token and returns new token', async () => {
+      global.fetch = mockFetchResponse({ token: 'new-jwt-token' });
+
+      const result = await auth.refreshToken();
+
+      expect(result).toBe('new-jwt-token');
+      expect(fetch).toHaveBeenCalledWith(
+        '/auth/refresh',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            Authorization: 'Bearer test-token',
+          }),
+        })
+      );
+    });
+
+    it('throws ApiError on expired token', async () => {
+      global.fetch = mockFetchResponse(
+        { error: { code: 'AUTH_EXPIRED', message: 'Token expired' } },
+        401
+      );
+
+      try {
+        await auth.refreshToken();
+        expect.fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        expect((e as ApiError).isTokenExpired).toBe(true);
+      }
+    });
   });
 
   describe('Token handling', () => {

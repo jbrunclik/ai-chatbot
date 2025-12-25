@@ -1,8 +1,14 @@
-import { auth } from '../api/client';
+import { auth, ApiError } from '../api/client';
 import { useStore } from '../state/store';
 import { toast } from '../components/Toast';
 
 let googleInitialized = false;
+let tokenRefreshTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+// Refresh token when less than 2 days remain (tokens last 7 days)
+// This gives a 48-hour window where any app open will trigger refresh,
+// so users can skip a day without getting logged out.
+const TOKEN_REFRESH_BUFFER_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 
 /**
  * Initialize Google Identity Services
@@ -66,6 +72,9 @@ async function handleGoogleCredential(
     store.setToken(authResponse.token);
     store.setUser(authResponse.user);
 
+    // Schedule automatic token refresh before expiration
+    scheduleTokenRefresh(authResponse.token);
+
     // Trigger app reload/init
     window.dispatchEvent(new CustomEvent('auth:login'));
   } catch (error) {
@@ -79,6 +88,10 @@ async function handleGoogleCredential(
 
 /**
  * Check authentication status
+ *
+ * Returns true if authenticated, false otherwise.
+ * If the token has expired, shows a toast prompting re-login.
+ * If authenticated, schedules automatic token refresh.
  */
 export async function checkAuth(): Promise<boolean> {
   const store = useStore.getState();
@@ -86,11 +99,23 @@ export async function checkAuth(): Promise<boolean> {
   try {
     const user = await auth.me();
     store.setUser(user);
-    return true;
-  } catch {
-    // Auth failed - clear any stale token
+
+    // Schedule automatic token refresh for existing valid token
     if (store.token) {
+      scheduleTokenRefresh(store.token);
+    }
+
+    return true;
+  } catch (error) {
+    // Auth failed - clear any stale token and cancel refresh
+    if (store.token) {
+      cancelTokenRefresh();
       store.logout();
+
+      // Show helpful message for token expiration
+      if (error instanceof ApiError && error.isTokenExpired) {
+        toast.info('Your session has expired. Please sign in again.');
+      }
     }
     return false;
   }
@@ -101,6 +126,10 @@ export async function checkAuth(): Promise<boolean> {
  */
 export function logout(): void {
   const store = useStore.getState();
+
+  // Cancel any scheduled token refresh
+  cancelTokenRefresh();
+
   store.logout();
 
   // TODO: Remove legacy token handling after existing JWTs expire (they have 7 day expiry)
@@ -136,4 +165,94 @@ function waitForGoogleScript(): Promise<void> {
     };
     checkGoogle();
   });
+}
+
+/**
+ * Decode JWT payload without verification (for reading expiration time).
+ * This is safe because we only use it to schedule refresh - the server
+ * will verify the token when we actually use it.
+ */
+function decodeJwtPayload(token: string): { exp?: number; iat?: number } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(atob(parts[1]));
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Schedule automatic token refresh before expiration.
+ * Called after successful login or token refresh.
+ */
+export function scheduleTokenRefresh(token: string): void {
+  // Clear any existing scheduled refresh
+  cancelTokenRefresh();
+
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp) {
+    console.warn('Could not decode token expiration, skipping auto-refresh');
+    return;
+  }
+
+  const expirationMs = payload.exp * 1000;
+  const now = Date.now();
+  const timeUntilExpiry = expirationMs - now;
+
+  // Schedule refresh 1 hour before expiration
+  const refreshIn = timeUntilExpiry - TOKEN_REFRESH_BUFFER_MS;
+
+  if (refreshIn <= 0) {
+    // Token expires in less than 1 hour, refresh immediately
+    console.log('Token expiring soon, refreshing immediately');
+    performTokenRefresh();
+    return;
+  }
+
+  console.log(`Scheduling token refresh in ${Math.round(refreshIn / 1000 / 60)} minutes`);
+  tokenRefreshTimeoutId = setTimeout(performTokenRefresh, refreshIn);
+}
+
+/**
+ * Cancel any scheduled token refresh.
+ */
+export function cancelTokenRefresh(): void {
+  if (tokenRefreshTimeoutId) {
+    clearTimeout(tokenRefreshTimeoutId);
+    tokenRefreshTimeoutId = null;
+  }
+}
+
+/**
+ * Perform the actual token refresh.
+ */
+async function performTokenRefresh(): Promise<void> {
+  const store = useStore.getState();
+
+  if (!store.token) {
+    console.log('No token to refresh');
+    return;
+  }
+
+  try {
+    console.log('Refreshing token...');
+    const newToken = await auth.refreshToken();
+    store.setToken(newToken);
+    console.log('Token refreshed successfully');
+
+    // Schedule next refresh
+    scheduleTokenRefresh(newToken);
+  } catch (error) {
+    console.error('Failed to refresh token:', error);
+
+    // If refresh fails due to expired token, trigger re-auth
+    if (error instanceof ApiError && error.isTokenExpired) {
+      store.logout();
+      toast.info('Your session has expired. Please sign in again.');
+      window.dispatchEvent(new CustomEvent('auth:logout'));
+    }
+    // For other errors, we'll try again on the next API call
+  }
 }
