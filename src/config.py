@@ -48,6 +48,17 @@ class Config:
     # Image generation alone can take 30-60s, complex queries with multiple tools need more time
     CHAT_TIMEOUT: int = int(os.getenv("CHAT_TIMEOUT", "300"))  # 5 minutes for full chat request
     TOOL_TIMEOUT: int = int(os.getenv("TOOL_TIMEOUT", "90"))  # 90 seconds per tool execution
+    GOOGLE_AUTH_TIMEOUT: int = int(
+        os.getenv("GOOGLE_AUTH_TIMEOUT", "10")
+    )  # 10 seconds for Google token verification
+
+    # Streaming cleanup thread timeouts
+    STREAM_CLEANUP_THREAD_TIMEOUT: int = int(
+        os.getenv("STREAM_CLEANUP_THREAD_TIMEOUT", "600")
+    )  # 10 minutes for stream thread to complete
+    STREAM_CLEANUP_WAIT_DELAY: float = float(
+        os.getenv("STREAM_CLEANUP_WAIT_DELAY", "1.0")
+    )  # 1 second delay before checking if message was saved
 
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -57,6 +68,9 @@ class Config:
 
     # Cost tracking
     COST_CURRENCY: str = os.getenv("COST_CURRENCY", "CZK").upper()  # Default to CZK
+    COST_HISTORY_MAX_MONTHS: int = int(
+        os.getenv("COST_HISTORY_MAX_MONTHS", "120")
+    )  # Max 10 years of history (120 months)
 
     # Gemini 3 pricing (per million tokens) - as of Dec 2025
     # These should be updated when Google changes pricing
@@ -133,6 +147,18 @@ class Config:
             "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,application/json,text/csv",
         ).split(",")
     )
+
+    # Image thumbnail settings
+    THUMBNAIL_MAX_SIZE: tuple[int, int] = (
+        int(os.getenv("THUMBNAIL_MAX_WIDTH", "400")),
+        int(os.getenv("THUMBNAIL_MAX_HEIGHT", "400")),
+    )
+    THUMBNAIL_QUALITY: int = int(os.getenv("THUMBNAIL_QUALITY", "85"))  # JPEG quality (1-100)
+
+    # Cost history settings
+    COST_HISTORY_DEFAULT_LIMIT: int = int(
+        os.getenv("COST_HISTORY_DEFAULT_LIMIT", "12")
+    )  # Default to 12 months
 
     @classmethod
     def validate(cls) -> list[str]:

@@ -74,6 +74,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Add connection quality indicator** - Show visual feedback when connection is slow (e.g., SSE keepalives arriving but no tokens for extended period).
 - [ ] **Handle stale JWT on reconnect** - If user's connection drops and reconnects after JWT expires, gracefully prompt re-auth instead of failing silently.
 - [x] **Persist unsent messages locally** - Draft messages preserved in store and restored on send failure.
+- [ ] **Real-time data synchronization** - Implement mechanism to notify clients about new data (e.g., messages appearing in a chat after losing connectivity, new conversations created on different devices). Options: WebSockets for bidirectional, SSE for server-to-client updates, or polling with efficient change detection. Should handle reconnection and sync missed updates.
 
 ### 🔴 Critical / High Priority
 - [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.

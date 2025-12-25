@@ -6,8 +6,8 @@ import json
 
 from PIL import Image
 
+from src.config import Config
 from src.utils.images import (
-    THUMBNAIL_MAX_SIZE,
     extract_generated_images_from_tool_results,
     generate_thumbnail,
     process_image_files,
@@ -25,8 +25,8 @@ class TestGenerateThumbnail:
         # Verify it's valid base64 that decodes to an image
         decoded = base64.b64decode(thumbnail)
         img = Image.open(io.BytesIO(decoded))
-        assert img.size[0] <= THUMBNAIL_MAX_SIZE[0]
-        assert img.size[1] <= THUMBNAIL_MAX_SIZE[1]
+        assert img.size[0] <= Config.THUMBNAIL_MAX_SIZE[0]
+        assert img.size[1] <= Config.THUMBNAIL_MAX_SIZE[1]
 
     def test_scales_down_large_image(self, large_png_base64: str) -> None:
         """Large images should be scaled down to fit max size."""
@@ -37,8 +37,8 @@ class TestGenerateThumbnail:
         img = Image.open(io.BytesIO(decoded))
 
         # Original was 1000x1000, should be scaled to max 400x400
-        assert img.size[0] <= THUMBNAIL_MAX_SIZE[0]
-        assert img.size[1] <= THUMBNAIL_MAX_SIZE[1]
+        assert img.size[0] <= Config.THUMBNAIL_MAX_SIZE[0]
+        assert img.size[1] <= Config.THUMBNAIL_MAX_SIZE[1]
 
     def test_small_image_not_upscaled(self, sample_png_base64: str) -> None:
         """Small images should not be upscaled."""

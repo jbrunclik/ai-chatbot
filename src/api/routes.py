@@ -660,8 +660,11 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
             | Exception
         ] = queue.Queue()
 
+        # Shared state for final results (accessible from both threads)
+        final_results: dict[str, Any] = {"ready": False}
+
         def stream_tokens() -> None:
-            """Background thread that streams tokens into the queue."""
+            """Background thread that streams tokens into the queue and saves message on completion."""
             # Copy context from parent thread so contextvars are accessible
             # This is necessary because Python threads don't inherit context by default
             set_current_request_id(stream_request_id)
@@ -675,7 +678,19 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                 ):
                     if isinstance(item, str):
                         token_count += 1
-                    token_queue.put(item)
+                        token_queue.put(item)
+                    elif isinstance(item, tuple):
+                        # This is the final tuple - store it for cleanup thread and put in queue
+                        # Store in final_results for cleanup thread (in case generator stops)
+                        final_results["clean_content"] = item[0]
+                        final_results["metadata"] = item[1]
+                        final_results["tool_results"] = item[2]
+                        final_results["usage_info"] = item[3]
+                        final_results["ready"] = True
+                        # Also put in queue for generator to process
+                        token_queue.put(item)
+                    else:
+                        token_queue.put(item)
                 logger.debug(
                     "Stream thread completed",
                     extra={
@@ -684,6 +699,7 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                         "token_count": token_count,
                     },
                 )
+
                 token_queue.put(None)  # Signal completion
             except Exception as e:
                 logger.error(
@@ -695,14 +711,172 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
 
         # Start streaming in background thread
         # Note: The thread sets its own request_id via set_current_request_id()
-        stream_thread = threading.Thread(target=stream_tokens, daemon=True)
+        stream_thread = threading.Thread(
+            target=stream_tokens, daemon=False
+        )  # Non-daemon to ensure completion
         stream_thread.start()
+
+        # Start cleanup thread to ensure message is saved even if client disconnects
+        # This thread waits for stream_thread to complete, then saves the message if generator didn't
+        def cleanup_and_save() -> None:
+            """Wait for stream thread to complete, then save message if generator stopped early."""
+            try:
+                # Wait for stream thread to complete (with timeout to prevent hanging forever)
+                stream_thread.join(timeout=Config.STREAM_CLEANUP_THREAD_TIMEOUT)
+                if stream_thread.is_alive():
+                    logger.error(
+                        "Stream thread did not complete within timeout",
+                        extra={"user_id": user.id, "conversation_id": conv_id},
+                    )
+                    return
+
+                # Wait a bit for generator to process final tuple (if client still connected)
+                import time
+
+                time.sleep(Config.STREAM_CLEANUP_WAIT_DELAY)
+
+                # If final results are ready, save the message (generator may have stopped early)
+                # We check if message was already saved by trying to get the last message
+                # If it's the user message we just added, then assistant message wasn't saved yet
+                if final_results["ready"]:
+                    messages = db.get_messages(conv_id)
+                    # Check if last message is assistant (meaning it was already saved by generator)
+                    if not messages or messages[-1].role != "assistant":
+                        logger.info(
+                            "Generator stopped early (client disconnected), saving message in cleanup thread",
+                            extra={"user_id": user.id, "conversation_id": conv_id},
+                        )
+                        # Save the message using final results
+                        save_message_to_db(
+                            final_results["clean_content"],
+                            final_results["metadata"],
+                            final_results["tool_results"],
+                            final_results["usage_info"],
+                        )
+            except Exception as e:
+                logger.error(
+                    "Error in cleanup thread",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "error": str(e),
+                    },
+                    exc_info=True,
+                )
+
+        cleanup_thread = threading.Thread(target=cleanup_and_save, daemon=True)
+        cleanup_thread.start()
 
         # Variables to capture final content, metadata, tool results, and usage info
         clean_content = ""
         metadata: dict[str, Any] = {}
         tool_results: list[dict[str, Any]] = []
         usage_info: dict[str, Any] = {}
+        client_connected = True  # Track if client is still connected
+
+        def save_message_to_db(
+            content: str,
+            meta: dict[str, Any],
+            tools: list[dict[str, Any]],
+            usage: dict[str, Any],
+        ) -> None:
+            """Save message to database. Called from both generator and cleanup thread."""
+            try:
+                # Extract metadata fields
+                sources, generated_images_meta = extract_metadata_fields(meta)
+                logger.debug(
+                    "Extracted metadata from stream",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "sources_count": len(sources) if sources else 0,
+                        "generated_images_count": len(generated_images_meta)
+                        if generated_images_meta
+                        else 0,
+                    },
+                )
+
+                # Get the FULL tool results (with _full_result) captured before stripping
+                # This is needed for extracting generated images
+                full_tool_results = get_full_tool_results(stream_request_id)
+                set_current_request_id(None)  # Clean up
+
+                # Extract generated image files from FULL tool results (before stripping)
+                gen_image_files = extract_generated_images_from_tool_results(full_tool_results)
+                if gen_image_files:
+                    logger.info(
+                        "Generated images extracted from stream",
+                        extra={
+                            "user_id": user.id,
+                            "conversation_id": conv_id,
+                            "image_count": len(gen_image_files),
+                        },
+                    )
+
+                # Save complete response to DB
+                logger.debug(
+                    "Saving assistant message from stream",
+                    extra={"user_id": user.id, "conversation_id": conv_id},
+                )
+                assistant_msg = db.add_message(
+                    conv_id,
+                    "assistant",
+                    content,
+                    files=gen_image_files if gen_image_files else None,
+                    sources=sources if sources else None,
+                    generated_images=generated_images_meta if generated_images_meta else None,
+                )
+
+                # Calculate and save cost for streaming (use full_tool_results for image cost)
+                calculate_and_save_message_cost(
+                    assistant_msg.id,
+                    conv_id,
+                    user.id,
+                    conv.model,
+                    usage,
+                    full_tool_results,
+                    len(content),
+                    mode="stream",
+                )
+
+                # Auto-generate title from first message if still default
+                generated_title: str | None = None
+                if conv.title == "New Conversation":
+                    logger.debug(
+                        "Auto-generating conversation title from stream",
+                        extra={"user_id": user.id, "conversation_id": conv_id},
+                    )
+                    generated_title = generate_title(message_text, content)
+                    db.update_conversation(conv_id, user.id, title=generated_title)
+                    logger.debug(
+                        "Conversation title generated from stream",
+                        extra={
+                            "user_id": user.id,
+                            "conversation_id": conv_id,
+                            "title": generated_title,
+                        },
+                    )
+
+                logger.info(
+                    "Stream chat completed and saved",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "message_id": assistant_msg.id,
+                        "response_length": len(content),
+                        "client_connected": client_connected,
+                    },
+                )
+            except Exception as e:
+                logger.error(
+                    "Error saving stream message to DB",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "error": str(e),
+                    },
+                    exc_info=True,
+                )
 
         try:
             while True:
@@ -713,6 +887,9 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                     if item is None:
                         # Stream completed successfully
                         break
+                    elif isinstance(item, tuple):
+                        # Final tuple with (clean_content, metadata, tool_results, usage_info)
+                        clean_content, metadata, tool_results, usage_info = item
                     elif isinstance(item, Exception):
                         # Error occurred - send structured error for frontend handling
                         error_str = str(item).lower()
@@ -737,115 +914,104 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                                 "message": "Failed to generate response. Please try again.",
                                 "retryable": True,
                             }
-                        yield f"data: {json.dumps(error_data)}\n\n"
+                        # Try to send error event, but continue processing if client disconnected
+                        try:
+                            yield f"data: {json.dumps(error_data)}\n\n"
+                        except (BrokenPipeError, ConnectionError, OSError):
+                            # Client disconnected - error already logged in stream_thread
+                            pass
                         return
-                    elif isinstance(item, tuple):
-                        # Final tuple with (clean_content, metadata, tool_results, usage_info)
-                        clean_content, metadata, tool_results, usage_info = item
                     else:
                         # Got a token string - yield to frontend
-                        yield f"data: {json.dumps({'type': 'token', 'text': item})}\n\n"
+                        # Catch client disconnection errors but continue processing
+                        try:
+                            yield f"data: {json.dumps({'type': 'token', 'text': item})}\n\n"
+                        except (BrokenPipeError, ConnectionError, OSError) as e:
+                            # Client disconnected - log but continue processing in background
+                            if client_connected:
+                                logger.warning(
+                                    "Client disconnected during streaming",
+                                    extra={
+                                        "user_id": user.id,
+                                        "conversation_id": conv_id,
+                                        "error": str(e),
+                                    },
+                                )
+                                client_connected = False
+                            # Continue processing - background thread will complete and save to DB
 
                 except queue.Empty:
                     # No token available, send keepalive comment
                     # SSE comments start with ":" and are ignored by clients
-                    yield ": keepalive\n\n"
+                    # Catch client disconnection errors but continue processing
+                    try:
+                        yield ": keepalive\n\n"
+                    except (BrokenPipeError, ConnectionError, OSError) as e:
+                        # Client disconnected - log but continue processing in background
+                        if client_connected:
+                            logger.warning(
+                                "Client disconnected during keepalive",
+                                extra={
+                                    "user_id": user.id,
+                                    "conversation_id": conv_id,
+                                    "error": str(e),
+                                },
+                            )
+                            client_connected = False
+                        # Continue processing - background thread will complete and save to DB
 
-            # Extract metadata fields
-            sources, generated_images_meta = extract_metadata_fields(metadata)
-            logger.debug(
-                "Extracted metadata from stream",
-                extra={
-                    "user_id": user.id,
-                    "conversation_id": conv_id,
-                    "sources_count": len(sources) if sources else 0,
-                    "generated_images_count": len(generated_images_meta)
-                    if generated_images_meta
-                    else 0,
-                },
-            )
+            # Save message to DB (this will complete even if client disconnected)
+            # Use try/finally to ensure this runs even if generator stops early
+            try:
+                save_message_to_db(clean_content, metadata, tool_results, usage_info)
 
-            # Get the FULL tool results (with _full_result) captured before stripping
-            # This is needed for extracting generated images
-            full_tool_results = get_full_tool_results(stream_request_id)
-            set_current_request_id(None)  # Clean up
+                # Build done event if we have the message (for client that's still connected)
+                if client_connected and clean_content:
+                    # Get message ID from DB (message was just saved)
+                    messages = db.get_messages(conv_id)
+                    if messages and messages[-1].role == "assistant":
+                        assistant_msg = messages[-1]
+                        # Extract metadata again for done event
+                        sources, generated_images_meta = extract_metadata_fields(metadata)
+                        full_tool_results = get_full_tool_results(stream_request_id)
+                        gen_image_files = extract_generated_images_from_tool_results(
+                            full_tool_results
+                        )
 
-            # Extract generated image files from FULL tool results (before stripping)
-            gen_image_files = extract_generated_images_from_tool_results(full_tool_results)
-            if gen_image_files:
-                logger.info(
-                    "Generated images extracted from stream",
-                    extra={
-                        "user_id": user.id,
-                        "conversation_id": conv_id,
-                        "image_count": len(gen_image_files),
-                    },
-                )
+                        # Get generated title if it was created
+                        updated_conv = db.get_conversation(conv_id, user.id)
+                        generated_title = (
+                            updated_conv.title
+                            if updated_conv and updated_conv.title != "New Conversation"
+                            else None
+                        )
 
-            # Save complete response to DB
-            logger.debug(
-                "Saving assistant message from stream",
-                extra={"user_id": user.id, "conversation_id": conv_id},
-            )
-            assistant_msg = db.add_message(
-                conv_id,
-                "assistant",
-                clean_content,
-                files=gen_image_files if gen_image_files else None,
-                sources=sources if sources else None,
-                generated_images=generated_images_meta if generated_images_meta else None,
-            )
+                        done_data = build_stream_done_event(
+                            assistant_msg,
+                            gen_image_files,
+                            sources,
+                            generated_images_meta,
+                            conversation_title=generated_title,
+                        )
 
-            # Calculate and save cost for streaming (use full_tool_results for image cost)
-            calculate_and_save_message_cost(
-                assistant_msg.id,
-                conv_id,
-                user.id,
-                conv.model,
-                usage_info,
-                full_tool_results,
-                len(clean_content),
-                mode="stream",
-            )
-
-            # Auto-generate title from first message if still default
-            generated_title: str | None = None
-            if conv.title == "New Conversation":
-                logger.debug(
-                    "Auto-generating conversation title from stream",
-                    extra={"user_id": user.id, "conversation_id": conv_id},
-                )
-                generated_title = generate_title(message_text, clean_content)
-                db.update_conversation(conv_id, user.id, title=generated_title)
-                logger.debug(
-                    "Conversation title generated from stream",
-                    extra={
-                        "user_id": user.id,
-                        "conversation_id": conv_id,
-                        "title": generated_title,
-                    },
-                )
-
-            # Build done event (include title if it was just generated)
-            done_data = build_stream_done_event(
-                assistant_msg,
-                gen_image_files,
-                sources,
-                generated_images_meta,
-                conversation_title=generated_title,
-            )
-
-            logger.info(
-                "Stream chat completed",
-                extra={
-                    "user_id": user.id,
-                    "conversation_id": conv_id,
-                    "message_id": assistant_msg.id,
-                    "response_length": len(clean_content),
-                },
-            )
-
-            yield f"data: {json.dumps(done_data)}\n\n"
+                        # Try to send done event, but continue even if client disconnected
+                        try:
+                            yield f"data: {json.dumps(done_data)}\n\n"
+                        except (BrokenPipeError, ConnectionError, OSError) as e:
+                            # Client disconnected - message is already saved to DB
+                            logger.info(
+                                "Client disconnected before done event, but message saved",
+                                extra={
+                                    "user_id": user.id,
+                                    "conversation_id": conv_id,
+                                    "message_id": assistant_msg.id,
+                                    "error": str(e),
+                                },
+                            )
+            finally:
+                # Ensure stream thread completes (it's non-daemon so it will keep process alive)
+                # But we don't want to block here if client disconnected
+                pass
 
         except Exception as e:
             logger.error(
@@ -858,13 +1024,25 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                 exc_info=True,
             )
             # Send structured error (don't expose internal details)
+            # Try to send error event, but continue even if client disconnected
             error_data = {
                 "type": "error",
                 "code": "SERVER_ERROR",
                 "message": "An error occurred while generating the response. Please try again.",
                 "retryable": True,
             }
-            yield f"data: {json.dumps(error_data)}\n\n"
+            try:
+                yield f"data: {json.dumps(error_data)}\n\n"
+            except (BrokenPipeError, ConnectionError, OSError) as e:
+                # Client disconnected - error already logged
+                logger.debug(
+                    "Client disconnected before error event",
+                    extra={
+                        "user_id": user.id,
+                        "conversation_id": conv_id,
+                        "error": str(e),
+                    },
+                )
 
     return Response(
         generate(),
@@ -1329,9 +1507,9 @@ def get_user_cost_history() -> tuple[dict[str, Any], int]:
     user = get_current_user()
     assert user is not None  # Guaranteed by @require_auth
 
-    limit = request.args.get("limit", type=int) or 12
-    # Cap limit to prevent performance issues (max 10 years of history)
-    limit = min(limit, 120)
+    limit = request.args.get("limit", type=int) or Config.COST_HISTORY_DEFAULT_LIMIT
+    # Cap limit to prevent performance issues
+    limit = min(limit, Config.COST_HISTORY_MAX_MONTHS)
     logger.debug("Getting user cost history", extra={"user_id": user.id, "limit": limit})
 
     history = db.get_user_cost_history(user.id, limit)

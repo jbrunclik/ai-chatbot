@@ -519,8 +519,15 @@ Token usage is tracked efficiently during streaming by extracting and accumulati
 - `COST_CURRENCY`: Display currency (default: `CZK`)
 - `MODEL_PRICING`: Model pricing per million tokens (in [config.py](src/config.py))
 - `CURRENCY_RATES`: Exchange rates for currency conversion (in [config.py](src/config.py))
+- `COST_HISTORY_MAX_MONTHS`: Maximum number of months for cost history queries (default: `120`)
+- `COST_HISTORY_DEFAULT_LIMIT`: Default number of months for cost history queries (default: `12`)
+- `STREAM_CLEANUP_THREAD_TIMEOUT`: Timeout for cleanup thread waiting for stream thread (default: `600` seconds)
+- `STREAM_CLEANUP_WAIT_DELAY`: Delay before checking if message was saved (default: `1.0` seconds)
+- `GOOGLE_AUTH_TIMEOUT`: Timeout for Google token verification (default: `10` seconds)
+- `THUMBNAIL_MAX_SIZE`: Maximum thumbnail dimensions (default: `(400, 400)`)
+- `THUMBNAIL_QUALITY`: JPEG quality for thumbnails (default: `85`)
 
-**Note**: Currency rates and model pricing are currently hardcoded in `config.py`. See [TODO.md](TODO.md) for planned automated updates.
+**Note**: Currency rates and model pricing are currently hardcoded in `config.py`. See [TODO.md](TODO.md) for planned automated updates. All configuration values can be overridden via environment variables (see `.env.example`).
 
 ## Common Tasks
 
@@ -1269,3 +1276,33 @@ When I correct Claude's approach, the reasoning is documented here to prevent re
 **Pattern**: Lazy conversation creation - conversations are created locally with a `temp-` prefixed ID, only persisted to DB on first message
 **Location**: [main.ts](web/src/main.ts) - `createConversation()`, `sendMessage()`, `isTempConversation()`
 **Rationale**: Prevents empty conversations from polluting the database when users click "New Chat" but don't send any messages
+
+### Concurrent Request Handling
+
+The app supports multiple active requests across different conversations simultaneously. Requests continue processing in the background even when users switch conversations or disconnect.
+
+**Client-side behavior:**
+- **Request tracking**: Active requests are tracked per conversation in `activeRequests` map in [main.ts](web/src/main.ts)
+- **Conversation switching**: When switching conversations, active requests are NOT cancelled - they continue in the background
+- **UI updates**: Requests only update the UI if their conversation is still the current conversation. If the user switched away, the request completes silently and the message is saved to the database
+- **Error handling**: Errors are only shown to the user if the conversation is still current when the error occurs
+
+**Server-side behavior:**
+- **Client disconnection detection**: Streaming generator catches `BrokenPipeError`, `ConnectionError`, and `OSError` when yielding to detect client disconnections
+- **Background completion**: Background thread continues processing even if client disconnects. A cleanup thread ensures the message is saved to the database even if the generator stops early
+- **Message persistence**: Both streaming and batch requests save messages to the database before returning responses, ensuring data is never lost even if the client disconnects
+
+**Key implementation details:**
+- **Streaming**: Background thread (`stream_tokens`) processes LLM tokens and stores final results. Cleanup thread monitors completion and saves message if generator stopped early
+- **Batch**: Message is saved before returning response, so disconnection doesn't affect persistence
+- **Request tracking**: Client tracks requests with unique IDs (`stream-{convId}-{timestamp}` or `batch-{convId}-{timestamp}`) to allow multiple concurrent requests
+
+**When adding new request types:**
+1. Track requests in `activeRequests` map with unique IDs
+2. Check `isCurrentConversation` before updating UI
+3. Clean up request tracking in `finally` blocks
+4. On server, ensure operations complete even if client disconnects (catch disconnection errors, use cleanup threads if needed)
+
+**Key files:**
+- [main.ts](web/src/main.ts) - Request tracking, conversation switching logic, UI update guards
+- [routes.py](src/api/routes.py) - Client disconnection detection, cleanup threads, message persistence
