@@ -213,7 +213,7 @@ The systemd service automatically runs `npm install && npm run build` before sta
 
 ### Reverse Proxy (nginx)
 
-If running behind nginx, ensure timeouts are configured to match or exceed `GUNICORN_TIMEOUT`:
+If running behind nginx, ensure timeouts and compression are configured:
 
 ```nginx
 location / {
@@ -232,8 +232,18 @@ location / {
 
     # Disable buffering for streaming responses
     proxy_buffering off;
+
+    # Gzip compression (add to http or server block)
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_types text/plain text/css text/javascript application/javascript application/json application/xml text/xml;
+    gzip_comp_level 6;
 }
 ```
+
+**Note on gzip**: The gzip directives can also be placed in the `http` or `server` block to apply globally. The `gzip_vary on` directive ensures proper caching behavior with CDNs. Compression is skipped for already-compressed formats (images, PDFs) and responses smaller than `gzip_min_length`.
 
 The app uses SSE keepalive heartbeats (configurable via `SSE_KEEPALIVE_INTERVAL`) to prevent proxy timeouts during LLM "thinking" phases. For very long operations, increase both `GUNICORN_TIMEOUT` and nginx timeouts.
 
