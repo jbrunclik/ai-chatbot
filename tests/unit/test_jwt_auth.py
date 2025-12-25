@@ -34,9 +34,7 @@ class TestCreateToken:
         assert len(token) > 0
 
         # Verify it can be decoded
-        decoded = jwt.decode(
-            token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM]
-        )
+        decoded = jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
         assert decoded["sub"] == mock_user.id
         assert decoded["email"] == mock_user.email
         assert decoded["name"] == mock_user.name
@@ -44,9 +42,7 @@ class TestCreateToken:
     def test_token_contains_required_claims(self, mock_user: MagicMock) -> None:
         """Token should contain sub, email, name, exp, and iat claims."""
         token = create_token(mock_user)
-        decoded = jwt.decode(
-            token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM]
-        )
+        decoded = jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
 
         assert "sub" in decoded
         assert "email" in decoded
@@ -57,9 +53,7 @@ class TestCreateToken:
     def test_token_has_correct_expiration(self, mock_user: MagicMock) -> None:
         """Token expiration should match configured JWT_EXPIRATION_HOURS."""
         token = create_token(mock_user)
-        decoded = jwt.decode(
-            token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM]
-        )
+        decoded = jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
 
         exp_time = datetime.fromtimestamp(decoded["exp"], tz=UTC)
         now = datetime.now(UTC)
@@ -104,9 +98,7 @@ class TestDecodeToken:
             "exp": datetime.now(UTC) - timedelta(hours=1),
             "iat": datetime.now(UTC) - timedelta(hours=2),
         }
-        expired_token = jwt.encode(
-            payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM
-        )
+        expired_token = jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM)
 
         result = decode_token(expired_token)
         assert result is None

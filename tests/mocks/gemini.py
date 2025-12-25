@@ -74,9 +74,7 @@ def create_mock_tool_message(content: str, tool_call_id: str = "test-id") -> Mag
     return msg
 
 
-def create_mock_tool_call_response(
-    tool_name: str, tool_input: dict[str, Any]
-) -> MagicMock:
+def create_mock_tool_call_response(tool_name: str, tool_input: dict[str, Any]) -> MagicMock:
     """Create AIMessage with tool call request.
 
     Args:

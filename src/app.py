@@ -153,6 +153,17 @@ def main() -> None:
             print(f"  - {error}")
         sys.exit(1)
 
+    # Check database connectivity before starting app
+    from src.db.models import check_database_connectivity
+
+    db_ok, db_error = check_database_connectivity()
+    if not db_ok:
+        logger.error("Database connectivity check failed", extra={"error": db_error})
+        print(f"Database error: {db_error}")
+        sys.exit(1)
+
+    logger.info("Database connectivity verified", extra={"db_path": str(Config.DATABASE_PATH)})
+
     app = create_app()
     logger.info(
         "Starting AI Chatbot",

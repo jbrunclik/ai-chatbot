@@ -9,7 +9,6 @@ Usage:
 """
 
 import base64
-import json
 import os
 import sys
 import time
@@ -198,7 +197,7 @@ def create_mock_stream_chat() -> Any:
     to mock the stream_chat method to yield individual tokens followed by the
     final result tuple.
     """
-    from typing import Generator
+    from collections.abc import Generator
 
     def mock_stream_chat(
         self: Any,
@@ -206,7 +205,7 @@ def create_mock_stream_chat() -> Any:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
-    ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]], None, None]:
+    ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]]:
         """Mock streaming that yields tokens word-by-word."""
         # Use custom response if set, otherwise use prefix + message
         if MOCK_CONFIG["custom_response"]:
@@ -245,7 +244,7 @@ def main() -> None:
 
     from flask import Blueprint
 
-    print(f"E2E Test Server starting...")
+    print("E2E Test Server starting...")
     print(f"Database: {E2E_DB_PATH}")
 
     # Remove old test database for clean state
@@ -259,8 +258,12 @@ def main() -> None:
         stack.enter_context(patch("src.agent.tools.DDGS", create_mock_ddgs()))
         stack.enter_context(patch("src.agent.tools.httpx.Client", create_mock_httpx()))
         stack.enter_context(patch("src.agent.tools.genai.Client", create_mock_genai()))
-        stack.enter_context(patch("src.auth.google_auth.requests.get", create_mock_google_tokeninfo()))
-        stack.enter_context(patch("src.agent.chat_agent.ChatAgent.stream_chat", create_mock_stream_chat()))
+        stack.enter_context(
+            patch("src.auth.google_auth.requests.get", create_mock_google_tokeninfo())
+        )
+        stack.enter_context(
+            patch("src.agent.chat_agent.ChatAgent.stream_chat", create_mock_stream_chat())
+        )
 
         # Import app after mocks are in place
         from src.app import create_app
@@ -296,6 +299,7 @@ def main() -> None:
         def simulate_error() -> tuple[dict[str, Any], int]:
             """Simulate an error for testing error UI."""
             from src.api.errors import server_error
+
             return server_error("Simulated server error for testing")
 
         @test_bp.route("/test/simulate-timeout", methods=["POST"])
@@ -308,6 +312,7 @@ def main() -> None:
         def set_mock_response() -> tuple[dict[str, str], int]:
             """Set a custom mock response for testing specific content."""
             from flask import request
+
             data = request.get_json() or {}
             response = data.get("response")
             MOCK_CONFIG["custom_response"] = response

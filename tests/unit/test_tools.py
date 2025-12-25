@@ -4,7 +4,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from src.agent.tools import (
     VALID_ASPECT_RATIOS,
@@ -301,9 +300,7 @@ class TestGenerateImage:
     def test_handles_safety_block(self, mock_client_class: MagicMock) -> None:
         """Should return friendly error for safety blocks."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception(
-            "SAFETY: Content blocked"
-        )
+        mock_client.models.generate_content.side_effect = Exception("SAFETY: Content blocked")
         mock_client_class.return_value = mock_client
 
         result = generate_image.invoke({"prompt": "inappropriate content"})

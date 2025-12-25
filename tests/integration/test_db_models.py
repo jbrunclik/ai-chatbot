@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 class TestUserOperations:
     """Tests for User CRUD operations."""
 
-    def test_create_user(self, test_database: "Database") -> None:
+    def test_create_user(self, test_database: Database) -> None:
         """Should create a new user with all fields."""
         user = test_database.get_or_create_user(
             email="new@example.com",
@@ -27,7 +27,7 @@ class TestUserOperations:
         assert user.picture == "https://example.com/pic.jpg"
         assert isinstance(user.created_at, datetime)
 
-    def test_get_existing_user(self, test_database: "Database") -> None:
+    def test_get_existing_user(self, test_database: Database) -> None:
         """Should return existing user without creating duplicate."""
         user1 = test_database.get_or_create_user(
             email="existing@example.com",
@@ -43,7 +43,7 @@ class TestUserOperations:
         assert user1.id == user2.id
         assert user2.name == "First Name"  # Original name preserved
 
-    def test_get_user_by_id(self, test_database: "Database", test_user: "User") -> None:
+    def test_get_user_by_id(self, test_database: Database, test_user: User) -> None:
         """Should find user by ID."""
         found_user = test_database.get_user_by_id(test_user.id)
 
@@ -51,12 +51,12 @@ class TestUserOperations:
         assert found_user.id == test_user.id
         assert found_user.email == test_user.email
 
-    def test_get_nonexistent_user_returns_none(self, test_database: "Database") -> None:
+    def test_get_nonexistent_user_returns_none(self, test_database: Database) -> None:
         """Should return None for non-existent user ID."""
         user = test_database.get_user_by_id("nonexistent-user-id")
         assert user is None
 
-    def test_user_without_picture(self, test_database: "Database") -> None:
+    def test_user_without_picture(self, test_database: Database) -> None:
         """Should create user without picture."""
         user = test_database.get_or_create_user(
             email="nopic@example.com",
@@ -69,9 +69,7 @@ class TestUserOperations:
 class TestConversationOperations:
     """Tests for Conversation CRUD operations."""
 
-    def test_create_conversation(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_create_conversation(self, test_database: Database, test_user: User) -> None:
         """Should create conversation with all fields."""
         conv = test_database.create_conversation(
             user_id=test_user.id,
@@ -88,7 +86,7 @@ class TestConversationOperations:
         assert isinstance(conv.updated_at, datetime)
 
     def test_create_conversation_default_model(
-        self, test_database: "Database", test_user: "User"
+        self, test_database: Database, test_user: User
     ) -> None:
         """Should use default model when not specified."""
         from src.config import Config
@@ -97,9 +95,7 @@ class TestConversationOperations:
 
         assert conv.model == Config.DEFAULT_MODEL
 
-    def test_get_conversation(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_get_conversation(self, test_database: Database, test_user: User) -> None:
         """Should get conversation by ID and user."""
         conv = test_database.create_conversation(test_user.id, "Test")
 
@@ -109,9 +105,7 @@ class TestConversationOperations:
         assert found.id == conv.id
         assert found.title == "Test"
 
-    def test_get_conversation_wrong_user(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_get_conversation_wrong_user(self, test_database: Database, test_user: User) -> None:
         """Should not return conversation for wrong user."""
         conv = test_database.create_conversation(test_user.id)
 
@@ -120,11 +114,11 @@ class TestConversationOperations:
         assert found is None
 
     def test_list_conversations_ordered_by_updated(
-        self, test_database: "Database", test_user: "User"
+        self, test_database: Database, test_user: User
     ) -> None:
         """Should list conversations ordered by updated_at DESC."""
         conv1 = test_database.create_conversation(test_user.id, "Conv 1")
-        conv2 = test_database.create_conversation(test_user.id, "Conv 2")
+        _conv2 = test_database.create_conversation(test_user.id, "Conv 2")
 
         # Update conv1 to make it more recent
         test_database.update_conversation(conv1.id, test_user.id, title="Conv 1 Updated")
@@ -134,35 +128,25 @@ class TestConversationOperations:
         assert len(conversations) == 2
         assert conversations[0].id == conv1.id  # Most recently updated first
 
-    def test_list_conversations_empty(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_list_conversations_empty(self, test_database: Database, test_user: User) -> None:
         """Should return empty list when user has no conversations."""
         conversations = test_database.list_conversations(test_user.id)
         assert conversations == []
 
-    def test_update_conversation_title(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_update_conversation_title(self, test_database: Database, test_user: User) -> None:
         """Should update conversation title."""
         conv = test_database.create_conversation(test_user.id, "Original")
 
-        result = test_database.update_conversation(
-            conv.id, test_user.id, title="New Title"
-        )
+        result = test_database.update_conversation(conv.id, test_user.id, title="New Title")
 
         assert result is True
         updated = test_database.get_conversation(conv.id, test_user.id)
         assert updated is not None
         assert updated.title == "New Title"
 
-    def test_update_conversation_model(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_update_conversation_model(self, test_database: Database, test_user: User) -> None:
         """Should update conversation model."""
-        conv = test_database.create_conversation(
-            test_user.id, model="gemini-3-flash-preview"
-        )
+        conv = test_database.create_conversation(test_user.id, model="gemini-3-flash-preview")
 
         result = test_database.update_conversation(
             conv.id, test_user.id, model="gemini-3-pro-preview"
@@ -174,17 +158,13 @@ class TestConversationOperations:
         assert updated.model == "gemini-3-pro-preview"
 
     def test_update_nonexistent_conversation(
-        self, test_database: "Database", test_user: "User"
+        self, test_database: Database, test_user: User
     ) -> None:
         """Should return False for non-existent conversation."""
-        result = test_database.update_conversation(
-            "nonexistent-id", test_user.id, title="Test"
-        )
+        result = test_database.update_conversation("nonexistent-id", test_user.id, title="Test")
         assert result is False
 
-    def test_delete_conversation(
-        self, test_database: "Database", test_user: "User"
-    ) -> None:
+    def test_delete_conversation(self, test_database: Database, test_user: User) -> None:
         """Should delete conversation."""
         conv = test_database.create_conversation(test_user.id)
 
@@ -194,7 +174,7 @@ class TestConversationOperations:
         assert test_database.get_conversation(conv.id, test_user.id) is None
 
     def test_delete_conversation_cascades_messages(
-        self, test_database: "Database", test_user: "User"
+        self, test_database: Database, test_user: User
     ) -> None:
         """Should delete related messages when conversation is deleted."""
         conv = test_database.create_conversation(test_user.id)
@@ -207,7 +187,7 @@ class TestConversationOperations:
         assert test_database.get_messages(conv.id) == []
 
     def test_delete_nonexistent_conversation(
-        self, test_database: "Database", test_user: "User"
+        self, test_database: Database, test_user: User
     ) -> None:
         """Should return False for non-existent conversation."""
         result = test_database.delete_conversation("nonexistent-id", test_user.id)
@@ -217,9 +197,7 @@ class TestConversationOperations:
 class TestMessageOperations:
     """Tests for Message CRUD operations."""
 
-    def test_add_message(
-        self, test_database: "Database", test_conversation: "Conversation"
-    ) -> None:
+    def test_add_message(self, test_database: Database, test_conversation: Conversation) -> None:
         """Should add message to conversation."""
         msg = test_database.add_message(
             conversation_id=test_conversation.id,
@@ -234,7 +212,7 @@ class TestMessageOperations:
         assert isinstance(msg.created_at, datetime)
 
     def test_add_message_with_files(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should store file attachments."""
         files = [{"name": "test.png", "type": "image/png", "data": "base64data"}]
@@ -249,7 +227,7 @@ class TestMessageOperations:
         assert msg.files == files
 
     def test_add_message_with_sources(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should store web sources for assistant messages."""
         sources = [{"title": "Wikipedia", "url": "https://wikipedia.org"}]
@@ -264,7 +242,7 @@ class TestMessageOperations:
         assert msg.sources == sources
 
     def test_add_message_with_generated_images(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should store generated image metadata."""
         generated_images = [{"prompt": "A sunset over mountains"}]
@@ -279,21 +257,19 @@ class TestMessageOperations:
         assert msg.generated_images == generated_images
 
     def test_add_message_updates_conversation(
-        self, test_database: "Database", test_conversation: "Conversation", test_user: "User"
+        self, test_database: Database, test_conversation: Conversation, test_user: User
     ) -> None:
         """Adding message should update conversation's updated_at."""
         original_updated = test_conversation.updated_at
 
         test_database.add_message(test_conversation.id, "user", "New message")
 
-        updated_conv = test_database.get_conversation(
-            test_conversation.id, test_user.id
-        )
+        updated_conv = test_database.get_conversation(test_conversation.id, test_user.id)
         assert updated_conv is not None
         assert updated_conv.updated_at >= original_updated
 
     def test_get_messages_ordered_by_time(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should return messages ordered by creation time."""
         test_database.add_message(test_conversation.id, "user", "First")
@@ -308,14 +284,14 @@ class TestMessageOperations:
         assert messages[2].content == "Third"
 
     def test_get_messages_empty(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should return empty list for conversation with no messages."""
         messages = test_database.get_messages(test_conversation.id)
         assert messages == []
 
     def test_get_message_by_id(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should find message by ID."""
         msg = test_database.add_message(test_conversation.id, "user", "Test")
@@ -326,7 +302,7 @@ class TestMessageOperations:
         assert found.id == msg.id
         assert found.content == "Test"
 
-    def test_get_nonexistent_message(self, test_database: "Database") -> None:
+    def test_get_nonexistent_message(self, test_database: Database) -> None:
         """Should return None for non-existent message."""
         msg = test_database.get_message_by_id("nonexistent-id")
         assert msg is None
@@ -337,9 +313,9 @@ class TestCostOperations:
 
     def test_save_message_cost(
         self,
-        test_database: "Database",
-        test_user: "User",
-        test_conversation: "Conversation",
+        test_database: Database,
+        test_user: User,
+        test_conversation: Conversation,
     ) -> None:
         """Should save message cost data."""
         msg = test_database.add_message(test_conversation.id, "assistant", "Response")
@@ -364,9 +340,9 @@ class TestCostOperations:
 
     def test_save_message_cost_with_image_generation(
         self,
-        test_database: "Database",
-        test_user: "User",
-        test_conversation: "Conversation",
+        test_database: Database,
+        test_user: User,
+        test_conversation: Conversation,
     ) -> None:
         """Should save cost including image generation cost."""
         msg = test_database.add_message(test_conversation.id, "assistant", "Image")
@@ -389,21 +365,19 @@ class TestCostOperations:
 
     def test_get_conversation_cost(
         self,
-        test_database: "Database",
-        test_user: "User",
-        test_conversation: "Conversation",
+        test_database: Database,
+        test_user: User,
+        test_conversation: Conversation,
     ) -> None:
         """Should sum all message costs in conversation."""
         msg1 = test_database.add_message(test_conversation.id, "assistant", "R1")
         msg2 = test_database.add_message(test_conversation.id, "assistant", "R2")
 
         test_database.save_message_cost(
-            msg1.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.01
+            msg1.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.01
         )
         test_database.save_message_cost(
-            msg2.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 200, 100, 0.02
+            msg2.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 200, 100, 0.02
         )
 
         total = test_database.get_conversation_cost(test_conversation.id)
@@ -411,7 +385,7 @@ class TestCostOperations:
         assert total == pytest.approx(0.03)
 
     def test_get_conversation_cost_empty(
-        self, test_database: "Database", test_conversation: "Conversation"
+        self, test_database: Database, test_conversation: Conversation
     ) -> None:
         """Should return 0 for conversation with no cost data."""
         total = test_database.get_conversation_cost(test_conversation.id)
@@ -419,28 +393,25 @@ class TestCostOperations:
 
     def test_get_user_monthly_cost(
         self,
-        test_database: "Database",
-        test_user: "User",
-        test_conversation: "Conversation",
+        test_database: Database,
+        test_user: User,
+        test_conversation: Conversation,
     ) -> None:
         """Should get monthly cost breakdown."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R1")
         test_database.save_message_cost(
-            msg.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.05
+            msg.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.05
         )
 
         now = datetime.now()
-        result = test_database.get_user_monthly_cost(
-            test_user.id, now.year, now.month
-        )
+        result = test_database.get_user_monthly_cost(test_user.id, now.year, now.month)
 
         assert result["total_usd"] == pytest.approx(0.05)
         assert result["message_count"] == 1
         assert "gemini-3-flash-preview" in result["breakdown"]
 
     def test_get_user_monthly_cost_invalid_month(
-        self, test_database: "Database", test_user: "User"
+        self, test_database: Database, test_user: User
     ) -> None:
         """Should raise ValueError for invalid month."""
         with pytest.raises(ValueError, match="Month must be between"):
@@ -451,37 +422,32 @@ class TestCostOperations:
 
     def test_get_user_cost_history(
         self,
-        test_database: "Database",
-        test_user: "User",
-        test_conversation: "Conversation",
+        test_database: Database,
+        test_user: User,
+        test_conversation: Conversation,
     ) -> None:
         """Should return monthly cost history."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R1")
         test_database.save_message_cost(
-            msg.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.05
+            msg.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.05
         )
 
         history = test_database.get_user_cost_history(test_user.id)
 
         assert len(history) >= 1
         now = datetime.now()
-        assert any(
-            h["year"] == now.year and h["month"] == now.month
-            for h in history
-        )
+        assert any(h["year"] == now.year and h["month"] == now.month for h in history)
 
     def test_delete_conversation_preserves_costs(
         self,
-        test_database: "Database",
-        test_user: "User",
-        test_conversation: "Conversation",
+        test_database: Database,
+        test_user: User,
+        test_conversation: Conversation,
     ) -> None:
         """Deleting conversation should preserve cost data for accurate reporting."""
         msg = test_database.add_message(test_conversation.id, "assistant", "R1")
         test_database.save_message_cost(
-            msg.id, test_conversation.id, test_user.id,
-            "gemini-3-flash-preview", 100, 50, 0.05
+            msg.id, test_conversation.id, test_user.id, "gemini-3-flash-preview", 100, 50, 0.05
         )
 
         test_database.delete_conversation(test_conversation.id, test_user.id)

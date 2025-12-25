@@ -4,7 +4,6 @@ import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from flask.testing import FlaskClient
 
 if TYPE_CHECKING:
@@ -18,7 +17,7 @@ class TestChatBatch:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return assistant response."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
@@ -45,7 +44,7 @@ class TestChatBatch:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 when neither message nor files provided."""
         response = client.post(
@@ -62,8 +61,8 @@ class TestChatBatch:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
-        test_database: "Database",
+        test_conversation: Conversation,
+        test_database: Database,
     ) -> None:
         """Should save user and assistant messages."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
@@ -91,7 +90,7 @@ class TestChatBatch:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should include sources when web tools are used."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
@@ -132,9 +131,7 @@ class TestChatBatch:
 
         assert response.status_code == 404
 
-    def test_requires_auth(
-        self, client: FlaskClient, test_conversation: "Conversation"
-    ) -> None:
+    def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.post(
             f"/api/conversations/{test_conversation.id}/chat/batch",
@@ -146,7 +143,7 @@ class TestChatBatch:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should pass force_tools to agent."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
@@ -176,7 +173,7 @@ class TestChatStream:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return SSE content type."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
@@ -208,7 +205,7 @@ class TestChatStream:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should stream tokens as SSE events."""
         with patch("src.api.routes.ChatAgent") as mock_agent_class:
@@ -242,7 +239,7 @@ class TestChatStream:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 when neither message nor files provided."""
         response = client.post(
@@ -265,9 +262,7 @@ class TestChatStream:
 
         assert response.status_code == 404
 
-    def test_requires_auth(
-        self, client: FlaskClient, test_conversation: "Conversation"
-    ) -> None:
+    def test_requires_auth(self, client: FlaskClient, test_conversation: Conversation) -> None:
         """Should return 401 without authentication."""
         response = client.post(
             f"/api/conversations/{test_conversation.id}/chat/stream",
@@ -283,7 +278,7 @@ class TestChatWithFiles:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
         sample_file: dict[str, Any],
     ) -> None:
         """Should handle file attachments in batch mode."""
@@ -311,7 +306,7 @@ class TestChatWithFiles:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
         sample_file: dict[str, Any],
     ) -> None:
         """Should accept files without text message."""

@@ -1,7 +1,5 @@
 """Unit tests for helper functions in src/agent/chat_agent.py."""
 
-import pytest
-
 from src.agent.chat_agent import (
     clean_tool_call_json,
     extract_metadata_from_response,
@@ -165,7 +163,9 @@ class TestStripFullResultFromToolContent:
 
     def test_strips_full_result_field(self) -> None:
         """Should remove _full_result from JSON content."""
-        content = '{"success": true, "message": "Done", "_full_result": {"image": {"data": "base64..."}}}'
+        content = (
+            '{"success": true, "message": "Done", "_full_result": {"image": {"data": "base64..."}}}'
+        )
         result = strip_full_result_from_tool_content(content)
 
         import json
@@ -192,7 +192,7 @@ class TestStripFullResultFromToolContent:
 
     def test_handles_json_array(self) -> None:
         """JSON array should pass through unchanged."""
-        content = '[1, 2, 3]'
+        content = "[1, 2, 3]"
         assert strip_full_result_from_tool_content(content) == content
 
 
@@ -252,9 +252,7 @@ class TestGetSystemPrompt:
 
     def test_includes_multiple_force_tools(self) -> None:
         """Should list all forced tools."""
-        prompt = get_system_prompt(
-            with_tools=True, force_tools=["web_search", "generate_image"]
-        )
+        prompt = get_system_prompt(with_tools=True, force_tools=["web_search", "generate_image"])
         assert "web_search" in prompt
         assert "generate_image" in prompt
 

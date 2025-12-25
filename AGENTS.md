@@ -1040,6 +1040,119 @@ def my_function(user_id: str, data: dict) -> None:
 - **Auth**: Token validation, user lookups
 - **File processing**: Validation, thumbnail generation
 
+## Database Performance & Monitoring
+
+The application includes several features to optimize database performance and help diagnose issues.
+
+### Database Indexes
+
+The following indexes are defined to optimize common query patterns:
+
+**Conversations table:**
+- `idx_conversations_user_id` - For filtering by user
+- `idx_conversations_user_id_updated_at` - Composite index for `list_conversations()` (filter + sort)
+
+**Messages table:**
+- `idx_messages_conversation_id` - For filtering by conversation
+- `idx_messages_conversation_id_created_at` - Composite index for `get_messages()` (filter + sort)
+
+**Message costs table:**
+- `idx_message_costs_message_id` - For cost lookups by message
+- `idx_message_costs_conversation_id` - For conversation cost totals
+- `idx_message_costs_user_id` - For user cost queries
+- `idx_message_costs_created_at` - For date-based queries
+
+### Slow Query Logging
+
+In development/debug mode, the database tracks query execution time and logs warnings for slow queries.
+
+**Configuration:**
+- `SLOW_QUERY_THRESHOLD_MS`: Threshold in milliseconds (default: 100)
+- Enabled when `LOG_LEVEL=DEBUG` or `FLASK_ENV=development`
+
+**Log output:**
+```json
+{
+  "level": "WARNING",
+  "message": "Slow query detected",
+  "query_snippet": "SELECT * FROM conversations WHERE user_id = ? ORDER BY...",
+  "params_snippet": "('user-123-abc',)",
+  "elapsed_ms": 150.5,
+  "threshold_ms": 100
+}
+```
+
+**Security considerations:**
+- Query text is truncated to 200 characters
+- Parameters are truncated to 100 characters (to avoid logging large base64 file data)
+
+### Database Connectivity Check
+
+At startup, the application verifies database connectivity before starting the Flask app.
+
+**Checks performed:**
+1. Parent directory exists
+2. Parent directory is writable
+3. Database file is readable/writable (if exists)
+4. Can connect and execute `SELECT 1`
+
+**Error handling:**
+- Missing directory: Clear message about missing directory
+- Permission errors: Guidance on file/directory permissions
+- Database locked: Indicates another process is using it
+- Disk I/O errors: Suggests checking disk health
+
+**Key files:**
+- [models.py](src/db/models.py) - `check_database_connectivity()`, `_execute_with_timing()`
+- [app.py](src/app.py) - Startup connectivity check in `main()`
+- [config.py](src/config.py) - `SLOW_QUERY_THRESHOLD_MS` setting
+
+### Database Best Practices
+
+When adding or modifying database code, follow these guidelines:
+
+**Avoiding N+1 Queries:**
+- Never query inside a loop - fetch all needed data in a single query
+- Use JOINs or subqueries when you need related data
+- If you need to load a list of items with counts/aggregates, use a single query with GROUP BY
+
+```python
+# BAD - N+1 pattern (1 query + N queries)
+conversations = db.list_conversations(user_id)
+for conv in conversations:
+    count = db.get_message_count(conv.id)  # N queries!
+
+# GOOD - Single query with JOIN or subquery
+conversations = db.list_conversations_with_counts(user_id)  # 1 query
+```
+
+**When to Add Indexes:**
+- Add indexes on columns used in WHERE clauses (e.g., `user_id`, `conversation_id`)
+- Add composite indexes for queries that filter AND sort (e.g., `(user_id, updated_at DESC)`)
+- Primary keys and UNIQUE constraints already have indexes
+- Don't over-index - each index slows down INSERT/UPDATE operations
+
+**Index Naming Convention:**
+```sql
+-- Single column: idx_{table}_{column}
+CREATE INDEX idx_conversations_user_id ON conversations(user_id)
+
+-- Composite: idx_{table}_{col1}_{col2}
+CREATE INDEX idx_conversations_user_id_updated_at ON conversations(user_id, updated_at DESC)
+```
+
+**Query Patterns in This Codebase:**
+- All queries go through `_execute_with_timing()` for automatic slow query detection
+- Use parameterized queries (`?` placeholders) - never string concatenation
+- Keep queries in [models.py](src/db/models.py) - don't write SQL in routes
+- Return dataclasses (`User`, `Conversation`, `Message`) from database methods
+
+**Migration Guidelines:**
+- Create new migration files in `migrations/` directory (numbered sequentially)
+- Use `IF NOT EXISTS` / `IF EXISTS` for safe rollbacks
+- Follow pattern from existing migrations (see [0005_add_cost_tracking.py](migrations/0005_add_cost_tracking.py))
+- Test migrations on a copy of production data before deploying
+
 ## PWA Viewport Height Fix
 
 The app uses a specific layout approach to ensure the sidebar and main panel fill 100% of the screen height in PWA mode (no address bar, full screen).

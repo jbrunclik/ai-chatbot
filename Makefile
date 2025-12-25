@@ -63,14 +63,14 @@ build:
 	cd web && $(NPM) run build
 
 lint:
-	$(RUFF) check src/
-	$(RUFF) format --check src/
+	$(RUFF) check src/ tests/
+	$(RUFF) format --check src/ tests/
 	$(MYPY) src/
 	cd web && $(NPM) run typecheck && $(NPM) run lint
 
 lint-fix:
-	$(RUFF) check --fix src/
-	$(RUFF) format src/
+	$(RUFF) check --fix src/ tests/
+	$(RUFF) format src/ tests/
 	cd web && $(NPM) run lint:fix
 
 run:

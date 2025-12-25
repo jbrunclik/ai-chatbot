@@ -4,8 +4,6 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
-import pytest
-from flask import Flask
 from flask.testing import FlaskClient
 
 if TYPE_CHECKING:
@@ -34,7 +32,7 @@ class TestGoogleAuthRoute:
         self,
         client: FlaskClient,
         mock_google_tokeninfo: MagicMock,
-        test_user: "User",
+        test_user: User,
     ) -> None:
         """Should return JWT for existing user."""
         response = client.post(
@@ -100,7 +98,7 @@ class TestAuthMeRoute:
     """Tests for GET /auth/me endpoint."""
 
     def test_returns_current_user(
-        self, client: FlaskClient, auth_headers: dict[str, str], test_user: "User"
+        self, client: FlaskClient, auth_headers: dict[str, str], test_user: User
     ) -> None:
         """Should return current authenticated user info."""
         response = client.get("/auth/me", headers=auth_headers)

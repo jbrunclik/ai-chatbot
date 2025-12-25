@@ -7,7 +7,6 @@ and returns correct error responses.
 import json
 from typing import TYPE_CHECKING
 
-import pytest
 from flask.testing import FlaskClient
 
 if TYPE_CHECKING:
@@ -87,7 +86,7 @@ class TestUpdateConversationValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for invalid model."""
         response = client.patch(
@@ -105,7 +104,7 @@ class TestUpdateConversationValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for empty title."""
         response = client.patch(
@@ -123,7 +122,7 @@ class TestUpdateConversationValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for title exceeding 200 characters."""
         response = client.patch(
@@ -141,7 +140,7 @@ class TestUpdateConversationValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should accept valid title update."""
         response = client.patch(
@@ -160,7 +159,7 @@ class TestChatBatchValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 when neither message nor files provided."""
         response = client.post(
@@ -177,7 +176,7 @@ class TestChatBatchValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should treat whitespace-only message as empty."""
         response = client.post(
@@ -194,7 +193,7 @@ class TestChatBatchValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for invalid file MIME type."""
         response = client.post(
@@ -202,7 +201,9 @@ class TestChatBatchValidation:
             headers=auth_headers,
             json={
                 "message": "",
-                "files": [{"name": "test.exe", "type": "application/x-executable", "data": "base64"}],
+                "files": [
+                    {"name": "test.exe", "type": "application/x-executable", "data": "base64"}
+                ],
             },
         )
 
@@ -216,7 +217,7 @@ class TestChatBatchValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 when too many files attached."""
         # Create 15 files (exceeds default MAX_FILES_PER_MESSAGE of 10)
@@ -235,7 +236,7 @@ class TestChatBatchValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for file missing required fields."""
         response = client.post(
@@ -255,7 +256,7 @@ class TestChatBatchValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for malformed JSON.
 
@@ -282,7 +283,7 @@ class TestChatStreamValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 when neither message nor files provided."""
         response = client.post(
@@ -299,7 +300,7 @@ class TestChatStreamValidation:
         self,
         client: FlaskClient,
         auth_headers: dict[str, str],
-        test_conversation: "Conversation",
+        test_conversation: Conversation,
     ) -> None:
         """Should return 400 for invalid file MIME type."""
         response = client.post(
