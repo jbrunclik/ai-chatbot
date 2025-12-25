@@ -67,7 +67,7 @@ This file tracks planned features, improvements, and technical debt.
 
 ### 🔴 Connection Resilience (Slow/Unreliable Networks)
 - [ ] **Save streaming responses on connection failure** - If SSE connection drops mid-stream, the assistant's partial response is lost (user message saved, assistant message not). Server should save responses incrementally or persist partial responses in a cleanup handler.
-- [ ] **Push title updates in streaming `done` event** - The `done` SSE event only contains `{id, created_at}`, not the auto-generated title. Client must make separate API call to fetch title, which can fail. Include title in `done` event.
+- [x] **Push title updates in streaming `done` event** - The `done` SSE event now includes `title` field when a title is auto-generated. Client uses title directly from response, falling back to API call only if not present.
 - [x] **Add retry logic for failed API calls** - Frontend automatically retries GET requests with exponential backoff. POST requests show toast with manual retry button.
 - [ ] **Detect and handle offline state** - Show offline indicator when network is unavailable. Queue messages locally and sync when connection returns.
 - [ ] **Handle partial file uploads** - Large file uploads can fail mid-transfer. Consider chunked uploads with resume capability, or at minimum show clear error and allow retry.

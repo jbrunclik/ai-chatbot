@@ -83,6 +83,7 @@ def build_chat_response(
     gen_image_files: list[dict[str, Any]],
     sources: list[dict[str, str]],
     generated_images_meta: list[dict[str, str]],
+    conversation_title: str | None = None,
 ) -> dict[str, Any]:
     """Build chat response dictionary for batch endpoint.
 
@@ -92,9 +93,10 @@ def build_chat_response(
         gen_image_files: List of generated image file dicts
         sources: List of source dicts
         generated_images_meta: List of generated image metadata dicts
+        conversation_title: Optional conversation title (included if provided)
 
     Returns:
-        Response dictionary with id, role, content, created_at, and optional files/sources/generated_images
+        Response dictionary with id, role, content, created_at, and optional files/sources/generated_images/title
     """
     response_data: dict[str, Any] = {
         "id": assistant_msg.id,
@@ -109,6 +111,8 @@ def build_chat_response(
         response_data["sources"] = sources
     if generated_images_meta:
         response_data["generated_images"] = generated_images_meta
+    if conversation_title:
+        response_data["title"] = conversation_title
 
     return response_data
 
@@ -118,6 +122,7 @@ def build_stream_done_event(
     gen_image_files: list[dict[str, Any]],
     sources: list[dict[str, str]],
     generated_images_meta: list[dict[str, str]],
+    conversation_title: str | None = None,
 ) -> dict[str, Any]:
     """Build done event dictionary for streaming endpoint.
 
@@ -126,9 +131,10 @@ def build_stream_done_event(
         gen_image_files: List of generated image file dicts
         sources: List of source dicts
         generated_images_meta: List of generated image metadata dicts
+        conversation_title: Optional conversation title (included if provided)
 
     Returns:
-        Done event dictionary with type, id, created_at, and optional files/sources/generated_images
+        Done event dictionary with type, id, created_at, and optional files/sources/generated_images/title
     """
     done_data: dict[str, Any] = {
         "type": "done",
@@ -142,6 +148,8 @@ def build_stream_done_event(
         done_data["sources"] = sources
     if generated_images_meta:
         done_data["generated_images"] = generated_images_meta
+    if conversation_title:
+        done_data["title"] = conversation_title
 
     return done_data
 
