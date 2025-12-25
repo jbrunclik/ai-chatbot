@@ -50,6 +50,7 @@ A personal AI chatbot web application using Google Gemini APIs, similar to ChatG
 
 - Python 3.11+
 - Node.js 18+ and npm
+- Git LFS (for visual test screenshots)
 - Google Gemini API key ([Get one here](https://aistudio.google.com/apikey))
 - (Optional) Google Cloud project for authentication
 

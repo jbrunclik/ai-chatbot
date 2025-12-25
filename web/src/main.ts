@@ -44,8 +44,8 @@ import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
 import { initScrollToBottom, checkScrollButtonVisibility } from './components/ScrollToBottom';
 import { initVersionBanner } from './components/VersionBanner';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
-import { getElementById, isScrolledToBottom, scrollToBottom } from './utils/dom';
-import { enableScrollOnImageLoad, getThumbnailObserver, observeThumbnail } from './utils/thumbnails';
+import { getElementById, isScrolledToBottom } from './utils/dom';
+import { enableScrollOnImageLoad, getThumbnailObserver, observeThumbnail, programmaticScrollToBottom } from './utils/thumbnails';
 import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, SPARKLES_ICON, PLUS_ICON } from './utils/icons';
 import { DEFAULT_CONVERSATION_TITLE } from './types/api';
 import type { Conversation, Message } from './types/api';
@@ -615,7 +615,7 @@ async function sendStreamingMessage(
           const wasAtBottom = isScrolledToBottom(messagesContainer);
           if (hasImagesToLoad && wasAtBottom) {
             enableScrollOnImageLoad();
-            scrollToBottom(messagesContainer, false);
+            programmaticScrollToBottom(messagesContainer, false);
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 const images = messageEl.querySelectorAll<HTMLImageElement>(
@@ -635,7 +635,7 @@ async function sendStreamingMessage(
             });
           } else {
             if (wasAtBottom) {
-              scrollToBottom(messagesContainer);
+              programmaticScrollToBottom(messagesContainer);
             }
             requestAnimationFrame(() => {
               checkScrollButtonVisibility();
@@ -742,7 +742,7 @@ async function sendBatchMessage(
       if (hasImagesToLoad && wasAtBottom) {
         // Scroll to bottom immediately to ensure images are visible
         // IntersectionObserver will re-check after scroll and fire for visible images
-        scrollToBottom(messagesContainer, false);
+        programmaticScrollToBottom(messagesContainer, false);
         // Use double RAF to ensure scroll completed and layout settled
         // Then check if images need manual triggering (fallback)
         requestAnimationFrame(() => {
@@ -772,7 +772,7 @@ async function sendBatchMessage(
         });
       } else {
         if (wasAtBottom) {
-          scrollToBottom(messagesContainer);
+          programmaticScrollToBottom(messagesContainer);
         }
         requestAnimationFrame(() => {
           checkScrollButtonVisibility();

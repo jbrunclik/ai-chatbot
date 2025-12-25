@@ -24,8 +24,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '25'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Node dependencies
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -74,8 +80,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '25'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Node dependencies
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: cd web && npm ci
@@ -108,8 +120,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '25'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Node dependencies
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -162,8 +180,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '25'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
+
+      - name: Cache Node dependencies
+        uses: actions/cache@v4
+        with:
+          path: web/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
