@@ -89,7 +89,7 @@ This file tracks planned features, improvements, and technical debt.
 
 ### 🟡 Code Quality
 - [x] Add proper database migrations (yoyo-migrations)
-- [ ] Add request validation (pydantic or marshmallow)
+- [x] Add request validation (pydantic or marshmallow) - Implemented Pydantic v2 with `@validate_request` decorator
 - [ ] Consider async Flask (quart) for better concurrency
 - [ ] Add OpenAPI/Swagger documentation
 - [ ] **Store files and thumbnails outside DB** - Move file data and thumbnails to object storage (S3, MinIO, etc.) for better scalability and performance

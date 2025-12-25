@@ -25,6 +25,8 @@ ai-chatbot/
 │   │   └── google_auth.py        # GIS token validation, email whitelist
 │   ├── api/
 │   │   ├── routes.py             # REST endpoints (/api/*, /auth/*)
+│   │   ├── schemas.py            # Pydantic request validation schemas
+│   │   ├── validation.py         # @validate_request decorator
 │   │   ├── errors.py             # Standardized error responses
 │   │   └── utils.py              # API response building utilities
 │   ├── agent/
@@ -75,6 +77,8 @@ ai-chatbot/
 
 - [config.py](src/config.py) - All env vars, model definitions
 - [routes.py](src/api/routes.py) - API endpoints
+- [schemas.py](src/api/schemas.py) - Pydantic request validation schemas
+- [validation.py](src/api/validation.py) - Request validation decorator
 - [chat_agent.py](src/agent/chat_agent.py) - LangGraph graph, Gemini integration
 - [models.py](src/db/models.py) - Database schema and operations
 - [images.py](src/utils/images.py) - Thumbnail generation for uploaded images
@@ -706,6 +710,98 @@ make test-fe-visual-update    # Update baselines after intentional UI changes
 
 - [TODO.md](TODO.md) - Memory bank for planned work
 - [README.md](README.md) - User-facing documentation
+
+## Request Validation
+
+The API uses Pydantic v2 for request validation. All validation follows a consistent pattern using the `@validate_request` decorator.
+
+### Schema Location
+
+Request schemas are defined in [schemas.py](src/api/schemas.py):
+- `GoogleAuthRequest` - POST /auth/google
+- `CreateConversationRequest` - POST /api/conversations
+- `UpdateConversationRequest` - PATCH /api/conversations/<id>
+- `ChatRequest` - POST /chat/batch and /chat/stream
+- `FileAttachment` - Nested schema for file uploads
+
+### Adding Validation to a New Endpoint
+
+1. Define the schema in `src/api/schemas.py`:
+
+```python
+from pydantic import BaseModel, Field, field_validator
+
+class MyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    count: int = Field(default=10, ge=1, le=100)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if v.startswith("_"):
+            raise ValueError("Name cannot start with underscore")
+        return v
+```
+
+2. Apply the decorator to your route:
+
+```python
+from src.api.schemas import MyRequest
+from src.api.validation import validate_request
+
+@api.route("/endpoint", methods=["POST"])
+@require_auth
+@validate_request(MyRequest)
+def my_endpoint(data: MyRequest) -> tuple[dict, int]:
+    # data is the validated Pydantic model
+    name = data.name
+    count = data.count
+    ...
+```
+
+### Decorator Order
+
+Decorators are applied bottom-to-top, so the order matters:
+```python
+@api.route("/endpoint", methods=["POST"])
+@require_auth           # 2nd: checks auth
+@validate_request(...)  # 1st: validates JSON
+def handler(data):
+    ...
+```
+
+This means auth errors return before validation is attempted (correct behavior - don't validate requests from unauthenticated users).
+
+### Two-Phase File Validation
+
+File uploads use two-phase validation:
+
+1. **Structure (Pydantic)**: Field presence, MIME type in allowed list, file count limit
+2. **Content (validate_files)**: Base64 decoding, file size limits
+
+This allows fast-fail on structure before expensive base64 operations.
+
+### Error Response Format
+
+Validation errors return the standard error format:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Human-readable error message",
+    "retryable": false,
+    "details": {"field": "field_name"}
+  }
+}
+```
+
+### Key Files
+
+- [schemas.py](src/api/schemas.py) - Pydantic schema definitions
+- [validation.py](src/api/validation.py) - `@validate_request` decorator and error conversion
+- [errors.py](src/api/errors.py) - Error response helpers
+- [files.py](src/utils/files.py) - Content validation for files
 
 ## Error Handling
 
