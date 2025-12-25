@@ -136,7 +136,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Add health check endpoint** - `/health` endpoint for monitoring and load balancer checks
 - [x] **Add request/response logging middleware** - Log all API requests and responses (with sensitive data redaction)
 - [x] **Add request ID tracking** - Include request IDs in logs and error responses for easier debugging
-- [ ] **Add API response compression** - Enable gzip compression for API responses
+- [x] **Add API response compression** - Enable gzip compression via nginx (see README deployment section)
 - [ ] **Remove unused dependencies** - Audit and remove any unused npm/Python dependencies
 - [ ] **Optimize image processing** - Consider async/background processing for thumbnail generation on large images
 - [ ] **Make HTTP timeout configurable** - `tools.py` has hardcoded 30s timeout; move to config
