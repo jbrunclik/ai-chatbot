@@ -3,6 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.constants import BYTES_PER_MB, SECONDS_PER_DAY, SECONDS_PER_WEEK
+
 load_dotenv()
 
 
@@ -30,7 +32,7 @@ class Config:
     # JWT Authentication
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "dev-secret-change-me")
     JWT_ALGORITHM = "HS256"
-    JWT_EXPIRATION_HOURS = 24 * 7  # 1 week
+    JWT_EXPIRATION_SECONDS = SECONDS_PER_WEEK  # 1 week
 
     # Email whitelist
     ALLOWED_EMAILS: list[str] = [
@@ -139,7 +141,7 @@ class Config:
     DATABASE_PATH: Path = BASE_DIR / os.getenv("DATABASE_PATH", "chatbot.db")
 
     # File upload settings
-    MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", str(20 * 1024 * 1024)))  # 20 MB default
+    MAX_FILE_SIZE: int = int(os.getenv("MAX_FILE_SIZE", str(20 * BYTES_PER_MB)))  # 20 MB default
     MAX_FILES_PER_MESSAGE: int = int(os.getenv("MAX_FILES_PER_MESSAGE", "10"))
     ALLOWED_FILE_TYPES: set[str] = set(
         os.getenv(
@@ -159,6 +161,48 @@ class Config:
     COST_HISTORY_DEFAULT_LIMIT: int = int(
         os.getenv("COST_HISTORY_DEFAULT_LIMIT", "12")
     )  # Default to 12 months
+
+    # Currency formatting (decimal places)
+    CURRENCY_DECIMALS = {
+        "USD": 4,
+        "EUR": 4,
+        "GBP": 4,
+        "CZK": 2,
+    }
+
+    # Title generation settings
+    TITLE_GENERATION_MODEL = "gemini-2.0-flash"
+    TITLE_GENERATION_TEMPERATURE = 0.7
+    TITLE_MAX_LENGTH = 60
+    TITLE_TRUNCATE_LENGTH = 57  # Leaves room for "..."
+    TITLE_CONTEXT_MAX_LENGTH = 500  # Max chars of context to send for title generation
+    TITLE_FALLBACK_LENGTH = 50  # Length for fallback title from user message
+
+    # LLM settings
+    GEMINI_DEFAULT_TEMPERATURE = 1.0
+
+    # Default values (must match frontend)
+    DEFAULT_CONVERSATION_TITLE = "New Conversation"
+    DEFAULT_IMAGE_GENERATION_MESSAGE = "I've generated the image for you."
+
+    # Metadata marker for extracting sources/images from LLM response
+    METADATA_MARKER = "<!-- METADATA:"
+
+    # HTTP caching
+    FILE_CACHE_MAX_AGE_SECONDS = 365 * SECONDS_PER_DAY  # 1 year
+
+    # Web search settings
+    WEB_SEARCH_DEFAULT_RESULTS = 5
+    WEB_SEARCH_MAX_RESULTS = 10
+
+    # HTML processing
+    HTML_TEXT_MAX_LENGTH = 15000
+
+    # Logging truncation settings
+    QUERY_LOG_MAX_LENGTH = 200
+    PARAMS_LOG_MAX_LENGTH = 100
+    PAYLOAD_LOG_MAX_LENGTH = 500
+    FILE_DATA_SNIPPET_LENGTH = 100
 
     @classmethod
     def validate(cls) -> list[str]:

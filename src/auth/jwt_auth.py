@@ -44,7 +44,7 @@ def create_token(user: User) -> str:
         "sub": user.id,
         "email": user.email,
         "name": user.name,
-        "exp": datetime.now(UTC) + timedelta(hours=Config.JWT_EXPIRATION_HOURS),
+        "exp": datetime.now(UTC) + timedelta(seconds=Config.JWT_EXPIRATION_SECONDS),
         "iat": datetime.now(UTC),
     }
     token = jwt.encode(payload, Config.JWT_SECRET_KEY, algorithm=Config.JWT_ALGORITHM)

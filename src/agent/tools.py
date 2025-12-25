@@ -18,7 +18,7 @@ from src.utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-def _extract_text_from_html(html: str, max_length: int = 15000) -> str:
+def _extract_text_from_html(html: str, max_length: int | None = None) -> str:
     """Extract readable text from HTML content."""
     soup = BeautifulSoup(html, "html.parser")
 
@@ -36,8 +36,9 @@ def _extract_text_from_html(html: str, max_length: int = 15000) -> str:
     text = converter.handle(str(soup))
 
     # Truncate if too long
-    if len(text) > max_length:
-        text = text[:max_length] + "\n\n[Content truncated...]"
+    limit = max_length if max_length is not None else Config.HTML_TEXT_MAX_LENGTH
+    if len(text) > limit:
+        text = text[:limit] + "\n\n[Content truncated...]"
 
     return text.strip()
 
@@ -109,7 +110,7 @@ def fetch_url(url: str) -> str:
 
 
 @tool
-def web_search(query: str, num_results: int = 5) -> str:
+def web_search(query: str, num_results: int | None = None) -> str:
     """Search the web using DuckDuckGo.
 
     Use this tool to find current information, news, prices, or any other
@@ -118,13 +119,15 @@ def web_search(query: str, num_results: int = 5) -> str:
 
     Args:
         query: The search query
-        num_results: Number of results to return (default 5, max 10)
+        num_results: Number of results to return (default from config, max from config)
 
     Returns:
         JSON string with query and results array containing title, url, and snippet
     """
+    if num_results is None:
+        num_results = Config.WEB_SEARCH_DEFAULT_RESULTS
     logger.info("web_search called", extra={"query": query, "num_results": num_results})
-    num_results = min(max(1, num_results), 10)
+    num_results = min(max(1, num_results), Config.WEB_SEARCH_MAX_RESULTS)
 
     try:
         logger.debug("Executing DuckDuckGo search")

@@ -140,7 +140,7 @@ Uses Google Identity Services (GIS) for client-side authentication:
 ### JWT Token Handling
 
 **Token lifecycle:**
-- Tokens expire after 7 days (`JWT_EXPIRATION_HOURS = 168`)
+- Tokens expire after 7 days (`JWT_EXPIRATION_SECONDS = SECONDS_PER_WEEK`)
 - Frontend automatically refreshes tokens when less than 2 days remain
 - This 48-hour window ensures users can skip a day without getting logged out
 - On page load, `checkAuth()` validates the token and schedules refresh
@@ -175,6 +175,48 @@ The backend returns distinct error codes for authentication failures:
 - Conventional Commits: `type(scope): description`
   - Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 - **Test all UI changes on both desktop and mobile** - The app has a responsive layout with different behavior at 768px breakpoint. Always verify changes work on both layouts.
+
+### Constants and Configuration
+
+Magic numbers and configurable values are centralized in dedicated files:
+
+**Frontend:**
+- [constants.ts](web/src/constants.ts) - True constants only (unit conversions like `MS_PER_SECOND`, `BYTES_PER_MB`)
+- [config.ts](web/src/config.ts) - Developer-configurable values (timeouts, thresholds, UI settings)
+
+**Backend:**
+- [constants.py](src/constants.py) - True constants only (unit conversions like `SECONDS_PER_MINUTE`, `BYTES_PER_MB`)
+- [config.py](src/config.py) - Developer-configurable values (timeouts, limits, feature settings)
+
+**Guidelines for adding new values:**
+
+1. **Constants vs Config:**
+   - `constants.{ts,py}`: Only mathematical/unit constants that will never change (e.g., `MS_PER_SECOND = 1000`)
+   - `config.{ts,py}`: Values that a developer might want to tweak (timeouts, thresholds, limits)
+
+2. **Naming conventions:**
+   - Use `SCREAMING_SNAKE_CASE` for all constants/config
+   - Include units in the name: `_MS`, `_SECONDS`, `_PX`, `_BYTES`
+   - Example: `API_TIMEOUT_MS`, `SWIPE_THRESHOLD_PX`, `MAX_FILE_SIZE_BYTES`
+
+3. **Use base constants when defining derived values:**
+   ```typescript
+   // Good - uses base constant
+   export const API_TIMEOUT_MS = 30 * MS_PER_SECOND;
+
+   // Bad - magic number
+   export const API_TIMEOUT_MS = 30000;
+   ```
+
+4. **When NOT to extract:**
+   - Test files (hardcoded timeouts in tests are fine)
+   - Obvious values like `0`, `1`, `-1`
+   - Array indices
+   - Loop bounds that are clearly tied to the data structure
+
+5. **Must match between FE/BE:**
+   - `DEFAULT_CONVERSATION_TITLE` must be identical in both config files
+   - Any shared constants should be documented with a comment noting they must match
 
 ## Pre-Commit Checklist
 

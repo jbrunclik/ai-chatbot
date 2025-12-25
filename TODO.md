@@ -101,7 +101,7 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Remove inline onclick handlers** - Migrated to event delegation in TypeScript components
 - [x] **Add request timeout handling** - CHAT_TIMEOUT (5 min) for batch requests, DEFAULT_TIMEOUT (30s) for other requests. Streaming needs per-read timeout (TODO).
 - [x] **TypeScript migration** - Frontend migrated to TypeScript with strict mode
-- [ ] **Extract magic numbers and strings to constants** - Swipe thresholds, timeouts extracted to named constants in TypeScript
+- [x] **Extract magic numbers and strings to constants** - Created centralized `constants.{ts,py}` for unit conversions and `config.{ts,py}` for developer-configurable values. See CLAUDE.md "Constants and Configuration" section for guidelines.
 - [ ] **Remove console.log statements** - Implement structured frontend logging (console statements remain for debugging)
 - [ ] **Reduce innerHTML usage** - Heavy reliance on innerHTML; prefer textContent and createElement where possible
 - [ ] **Audit unused CSS classes** - After TypeScript migration, review and remove unused CSS classes from main.css

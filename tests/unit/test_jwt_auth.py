@@ -54,13 +54,13 @@ class TestCreateToken:
         assert "iat" in decoded
 
     def test_token_has_correct_expiration(self, mock_user: MagicMock) -> None:
-        """Token expiration should match configured JWT_EXPIRATION_HOURS."""
+        """Token expiration should match configured JWT_EXPIRATION_SECONDS."""
         token = create_token(mock_user)
         decoded = jwt.decode(token, Config.JWT_SECRET_KEY, algorithms=[Config.JWT_ALGORITHM])
 
         exp_time = datetime.fromtimestamp(decoded["exp"], tz=UTC)
         now = datetime.now(UTC)
-        expected_exp = now + timedelta(hours=Config.JWT_EXPIRATION_HOURS)
+        expected_exp = now + timedelta(seconds=Config.JWT_EXPIRATION_SECONDS)
 
         # Allow 60 second tolerance for test execution time
         assert abs((exp_time - expected_exp).total_seconds()) < 60

@@ -506,7 +506,7 @@ def create_chat_model(model_name: str, with_tools: bool = True) -> ChatGoogleGen
     model = ChatGoogleGenerativeAI(
         model=model_name,
         google_api_key=Config.GEMINI_API_KEY,
-        temperature=1.0,  # Recommended default for Gemini 3
+        temperature=Config.GEMINI_DEFAULT_TEMPERATURE,
         convert_system_message_to_human=True,
     )
 
@@ -959,19 +959,21 @@ def generate_title(user_message: str, assistant_response: str) -> str:
     logger.debug("Generating conversation title")
     # Use Flash model for fast, cheap title generation
     model = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model=Config.TITLE_GENERATION_MODEL,
         google_api_key=Config.GEMINI_API_KEY,
-        temperature=0.7,
+        temperature=Config.TITLE_GENERATION_TEMPERATURE,
     )
 
+    # Truncate context to avoid sending too much data
+    max_context = Config.TITLE_CONTEXT_MAX_LENGTH
     prompt = f"""Generate a very short, concise title (3-6 words max) for this conversation.
 The title should capture the main topic or intent.
 Do NOT use quotes around the title.
 Do NOT include prefixes like "Title:" or "Topic:".
 Just output the title text directly.
 
-User: {user_message[:500]}
-Assistant: {assistant_response[:500]}
+User: {user_message[:max_context]}
+Assistant: {assistant_response[:max_context]}
 
 Title:"""
 
@@ -983,12 +985,13 @@ Title:"""
         if title.lower().startswith("title:"):
             title = title[6:].strip()
         # Truncate if too long
-        if len(title) > 60:
-            title = title[:57] + "..."
-        final_title = title or user_message[:50]
+        if len(title) > Config.TITLE_MAX_LENGTH:
+            title = title[: Config.TITLE_TRUNCATE_LENGTH] + "..."
+        final_title = title or user_message[: Config.TITLE_FALLBACK_LENGTH]
         logger.debug("Title generated", extra={"title": final_title})
         return final_title
     except Exception as e:
         # Fallback to truncated message on any error
         logger.warning("Title generation failed, using fallback", extra={"error": str(e)})
-        return user_message[:50] + ("..." if len(user_message) > 50 else "")
+        fallback_len = Config.TITLE_FALLBACK_LENGTH
+        return user_message[:fallback_len] + ("..." if len(user_message) > fallback_len else "")
