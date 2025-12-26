@@ -1,6 +1,7 @@
 """File validation utilities."""
 
 import base64
+import binascii
 from typing import Any
 
 from src.config import Config
@@ -50,7 +51,7 @@ def validate_files(files: list[dict[str, Any]]) -> tuple[bool, str]:
                     },
                 )
                 return False, f"File '{file_name}' exceeds {max_mb:.0f}MB limit"
-        except Exception as e:
+        except binascii.Error as e:
             logger.warning(
                 "Invalid file data encoding", extra={"file_name": file_name, "error": str(e)}
             )

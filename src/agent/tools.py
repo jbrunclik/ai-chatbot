@@ -8,7 +8,9 @@ import html2text
 import httpx
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+from ddgs.exceptions import DDGSException, RatelimitException, TimeoutException
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from langchain_core.tools import tool
 
@@ -150,7 +152,17 @@ def web_search(query: str, num_results: int | None = None) -> str:
         logger.info("Search completed", extra={"query": query, "result_count": len(search_results)})
         return json.dumps({"query": query, "results": search_results})
 
-    except Exception as e:
+    except RatelimitException:
+        logger.warning("Search rate limited", extra={"query": query})
+        return json.dumps(
+            {"query": query, "results": [], "error": "Search rate limited. Please try again later."}
+        )
+    except TimeoutException:
+        logger.warning("Search timeout", extra={"query": query})
+        return json.dumps(
+            {"query": query, "results": [], "error": "Search timed out. Please try again."}
+        )
+    except DDGSException as e:
         logger.error("Search error", extra={"query": query, "error": str(e)}, exc_info=True)
         return json.dumps({"query": query, "results": [], "error": str(e)})
 
@@ -290,18 +302,25 @@ def generate_image(prompt: str, aspect_ratio: str = "1:1") -> str:
         logger.warning("No image data found in response parts")
         return json.dumps({"error": "No image data found in response"})
 
-    except Exception as e:
+    except genai_errors.ClientError as e:
         error_msg = str(e)
-        logger.error("Image generation exception", extra={"error": error_msg}, exc_info=True)
+        logger.warning("Image generation client error", extra={"error": error_msg})
         # Provide user-friendly error messages for common issues
         if "SAFETY" in error_msg.upper() or "BLOCKED" in error_msg.upper():
-            logger.warning("Image generation blocked by safety filters")
             return json.dumps(
                 {
                     "error": "The image generation was blocked due to safety filters. Please try a different prompt."
                 }
             )
         return json.dumps({"error": f"Image generation failed: {error_msg}"})
+    except genai_errors.ServerError as e:
+        logger.error("Image generation server error", extra={"error": str(e)}, exc_info=True)
+        return json.dumps(
+            {"error": "Image generation service temporarily unavailable. Please try again."}
+        )
+    except genai_errors.APIError as e:
+        logger.error("Image generation API error", extra={"error": str(e)}, exc_info=True)
+        return json.dumps({"error": f"Image generation failed: {e}"})
 
 
 # List of all available tools for the agent

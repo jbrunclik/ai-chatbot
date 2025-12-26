@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 import queue
 import threading
@@ -1274,7 +1275,7 @@ def get_message_thumbnail(
                     "Cache-Control": "private, max-age=31536000",  # Cache for 1 year
                 },
             )
-        except Exception as e:
+        except binascii.Error as e:
             logger.warning(
                 "Failed to decode thumbnail, falling back to full image",
                 extra={
@@ -1320,7 +1321,7 @@ def get_message_thumbnail(
                 "Cache-Control": "private, max-age=31536000",
             },
         )
-    except Exception as e:
+    except binascii.Error as e:
         logger.error("Failed to decode image data", extra={"error": str(e)}, exc_info=True)
         return server_error("Failed to process image data")
 
@@ -1398,7 +1399,7 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
                 "Cache-Control": "private, max-age=31536000",  # Cache for 1 year
             },
         )
-    except Exception as e:
+    except binascii.Error as e:
         logger.error("Failed to decode file data", extra={"error": str(e)}, exc_info=True)
         return server_error("Failed to process file data")
 
