@@ -205,6 +205,7 @@ def create_mock_stream_chat() -> Any:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
+        user_name: str | None = None,
     ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]]:
         """Mock streaming that yields tokens word-by-word."""
         # Use custom response if set, otherwise use prefix + message

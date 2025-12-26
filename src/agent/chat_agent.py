@@ -305,16 +305,62 @@ Before responding to this query, you MUST use the following tools:
 Call each required tool first, then provide your response based on the results. Do not skip this step."""
 
 
-def get_system_prompt(with_tools: bool = True, force_tools: list[str] | None = None) -> str:
+def get_user_context(user_name: str | None = None) -> str:
+    """Build user context for the system prompt based on configuration.
+
+    Includes location and other contextual information that helps the assistant
+    provide more relevant, personalized responses.
+
+    Args:
+        user_name: The user's name from JWT authentication
+
+    Returns:
+        User context string, or empty string if no context is configured.
+    """
+    context_parts: list[str] = []
+
+    # User name context
+    if user_name:
+        context_parts.append(f"""## User
+The user's name is {user_name}. Use it naturally when appropriate (greetings, personalized responses), but don't overuse it.""")
+
+    # Location context
+    location = Config.USER_LOCATION
+    if location:
+        context_parts.append(f"""## Location
+The user is located in {location}. Use this to:
+- Use appropriate measurement units (metric vs imperial) based on local conventions
+- Prefer local currency when discussing prices or costs
+- Recommend locally available retailers, services, or resources when relevant
+- Consider local regulations, holidays, customs, and cultural context
+- Use appropriate date/time formats for the locale
+- When suggesting products, consider regional availability""")
+
+    if not context_parts:
+        return ""
+
+    return "\n\n# User Context\n" + "\n\n".join(context_parts)
+
+
+def get_system_prompt(
+    with_tools: bool = True,
+    force_tools: list[str] | None = None,
+    user_name: str | None = None,
+) -> str:
     """Build the system prompt, optionally including tool instructions.
 
     Args:
         with_tools: Whether tools are available
         force_tools: List of tool names that must be used (e.g., ["web_search", "image_generation"])
+        user_name: The user's name from JWT authentication
     """
     date_context = f"\n\nCurrent date and time: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
     prompt = BASE_SYSTEM_PROMPT
+
+    # Add user context if configured
+    prompt += get_user_context(user_name)
+
     if with_tools and TOOLS:
         prompt += TOOLS_SYSTEM_PROMPT
 
@@ -683,13 +729,18 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
+        user_name: str | None = None,
     ) -> list[BaseMessage]:
         """Build the messages list from history and user message."""
         messages: list[BaseMessage] = []
 
         # Always add system prompt (with tool instructions if tools are enabled)
         messages.append(
-            SystemMessage(content=get_system_prompt(self.with_tools, force_tools=force_tools))
+            SystemMessage(
+                content=get_system_prompt(
+                    self.with_tools, force_tools=force_tools, user_name=user_name
+                )
+            )
         )
 
         if history:
@@ -713,6 +764,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
+        user_name: str | None = None,
     ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
         """
         Send a message and get a response (non-streaming).
@@ -722,11 +774,14 @@ class ChatAgent:
             files: Optional list of file attachments
             history: Optional list of previous messages with 'role', 'content', and 'files' keys
             force_tools: Optional list of tool names that must be used
+            user_name: Optional user name from JWT for personalized responses
 
         Returns:
             Tuple of (response_text, tool_results, usage_info)
         """
-        messages = self._build_messages(text, files, history, force_tools=force_tools)
+        messages = self._build_messages(
+            text, files, history, force_tools=force_tools, user_name=user_name
+        )
         logger.debug(
             "Starting chat_batch",
             extra={
@@ -806,6 +861,7 @@ class ChatAgent:
         files: list[dict[str, Any]] | None = None,
         history: list[dict[str, Any]] | None = None,
         force_tools: list[str] | None = None,
+        user_name: str | None = None,
     ) -> Generator[str | tuple[str, dict[str, Any], list[dict[str, Any]], dict[str, Any]]]:
         """
         Stream response tokens using LangGraph's stream method.
@@ -815,6 +871,7 @@ class ChatAgent:
             files: Optional list of file attachments
             history: Optional list of previous messages with 'role', 'content', and 'files' keys
             force_tools: Optional list of tool names that must be used
+            user_name: Optional user name from JWT for personalized responses
 
         Yields:
             - str: Text tokens for streaming display
@@ -824,7 +881,9 @@ class ChatAgent:
               - tool_results: List of tool message dicts for server-side processing
               - usage_info: Dict with 'input_tokens' and 'output_tokens'
         """
-        messages = self._build_messages(text, files, history, force_tools=force_tools)
+        messages = self._build_messages(
+            text, files, history, force_tools=force_tools, user_name=user_name
+        )
 
         # Accumulate full response to extract metadata at the end
         full_response = ""

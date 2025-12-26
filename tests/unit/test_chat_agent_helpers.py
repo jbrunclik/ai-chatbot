@@ -6,6 +6,7 @@ from src.agent.chat_agent import (
     extract_text_content,
     get_force_tools_prompt,
     get_system_prompt,
+    get_user_context,
     strip_full_result_from_tool_content,
 )
 
@@ -287,3 +288,94 @@ class TestGetForceToolsPrompt:
         """Empty list should still generate prompt structure."""
         prompt = get_force_tools_prompt([])
         assert "MUST use the following tools" in prompt
+
+
+class TestGetUserContext:
+    """Tests for get_user_context function."""
+
+    def test_returns_empty_string_when_no_context(self) -> None:
+        """Should return empty string when no user name and no location configured."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = ""
+            context = get_user_context(user_name=None)
+            assert context == ""
+
+    def test_includes_user_name_when_provided(self) -> None:
+        """Should include user name section when provided."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = ""
+            context = get_user_context(user_name="John Doe")
+            assert "# User Context" in context
+            assert "## User" in context
+            assert "John Doe" in context
+
+    def test_includes_location_when_configured(self) -> None:
+        """Should include location section when USER_LOCATION is set."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = "Prague, Czech Republic"
+            context = get_user_context(user_name=None)
+            assert "# User Context" in context
+            assert "## Location" in context
+            assert "Prague, Czech Republic" in context
+
+    def test_location_includes_usage_guidance(self) -> None:
+        """Should include guidance on how to use location context."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = "New York, USA"
+            context = get_user_context(user_name=None)
+            assert "measurement units" in context.lower()
+            assert "metric" in context.lower() or "imperial" in context.lower()
+            assert "currency" in context.lower()
+            assert "local" in context.lower()
+
+    def test_includes_both_user_name_and_location(self) -> None:
+        """Should include both sections when both are provided."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = "Prague, Czech Republic"
+            context = get_user_context(user_name="John Doe")
+            assert "## User" in context
+            assert "John Doe" in context
+            assert "## Location" in context
+            assert "Prague, Czech Republic" in context
+
+
+class TestGetSystemPromptWithUserContext:
+    """Tests for get_system_prompt with user context integration."""
+
+    def test_includes_user_name_in_prompt(self) -> None:
+        """Should include user name in system prompt when provided."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = ""
+            prompt = get_system_prompt(user_name="Alice")
+            assert "Alice" in prompt
+            assert "User Context" in prompt
+
+    def test_includes_location_in_prompt(self) -> None:
+        """Should include location in system prompt when configured."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = "London, UK"
+            prompt = get_system_prompt(user_name=None)
+            assert "London, UK" in prompt
+
+    def test_no_user_context_when_not_configured(self) -> None:
+        """Should not include user context section when nothing is configured."""
+        from unittest.mock import patch
+
+        with patch("src.agent.chat_agent.Config") as mock_config:
+            mock_config.USER_LOCATION = ""
+            prompt = get_system_prompt(user_name=None)
+            assert "# User Context" not in prompt

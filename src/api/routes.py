@@ -414,7 +414,7 @@ def chat_batch(data: ChatRequest, conv_id: str) -> tuple[dict[str, str], int]:
 
         agent = ChatAgent(model_name=conv.model)
         raw_response, tool_results, usage_info = agent.chat_batch(
-            message_text, files, history, force_tools=force_tools
+            message_text, files, history, force_tools=force_tools, user_name=user.name
         )
 
         # Get the FULL tool results (with _full_result) captured before stripping
@@ -693,7 +693,7 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                 )
                 token_count = 0
                 for item in agent.stream_chat(
-                    message_text, files, history, force_tools=force_tools
+                    message_text, files, history, force_tools=force_tools, user_name=user.name
                 ):
                     if isinstance(item, str):
                         token_count += 1

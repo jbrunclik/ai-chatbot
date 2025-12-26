@@ -5,6 +5,7 @@ pillow>=10.0
 gunicorn>=23.0
 python-dotenv>=1.0
 google-genai>=1.0
+google-api-core>=2.0
 langgraph>=0.2
 langchain-google-genai>=2.0
 langchain-core>=0.3

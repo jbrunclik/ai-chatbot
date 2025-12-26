@@ -604,6 +604,30 @@ Token usage is tracked efficiently during streaming by extracting and accumulati
 
 **Note**: Currency rates and model pricing are currently hardcoded in `config.py`. See [TODO.md](TODO.md) for planned automated updates. All configuration values can be overridden via environment variables (see `.env.example`).
 
+## User Context
+
+The LLM system prompt can include user context to provide more personalized and contextually appropriate responses.
+
+### Configuration
+- `USER_LOCATION`: User's location for contextual responses (e.g., "Prague, Czech Republic" or "New York, USA")
+  - When set, the LLM is instructed to:
+    - Use appropriate measurement units (metric vs imperial) based on local conventions
+    - Prefer local currency when discussing prices
+    - Recommend locally available retailers/services when relevant
+    - Consider local regulations, holidays, and cultural context
+    - Use appropriate date/time formats for the locale
+
+### How it works
+1. **Location from config**: `USER_LOCATION` is read from environment/config (shared across all users of this deployment)
+2. **User name from JWT**: The authenticated user's name is passed from the JWT token
+3. **System prompt injection**: `get_user_context()` in [chat_agent.py](src/agent/chat_agent.py) builds the context section
+4. **Prompt integration**: `get_system_prompt()` includes the user context when building the system prompt
+
+### Key files
+- [config.py](src/config.py) - `USER_LOCATION` configuration
+- [chat_agent.py](src/agent/chat_agent.py) - `get_user_context()`, `get_system_prompt()` with `user_name` parameter
+- [routes.py](src/api/routes.py) - Passes `user_name` from authenticated user to chat methods
+
 ## Common Tasks
 
 ### Add a new API endpoint
