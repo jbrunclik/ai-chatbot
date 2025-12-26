@@ -4,6 +4,8 @@ import json
 from unittest.mock import MagicMock, patch
 
 import httpx
+from ddgs.exceptions import DDGSException
+from google.genai import errors as genai_errors
 
 from src.agent.tools import (
     VALID_ASPECT_RATIOS,
@@ -176,7 +178,7 @@ class TestWebSearch:
         mock_ddgs = MagicMock()
         mock_ddgs.__enter__ = MagicMock(return_value=mock_ddgs)
         mock_ddgs.__exit__ = MagicMock(return_value=False)
-        mock_ddgs.text.side_effect = Exception("Search failed")
+        mock_ddgs.text.side_effect = DDGSException("Search failed")
         mock_ddgs_class.return_value = mock_ddgs
 
         result = web_search.invoke({"query": "test"})
@@ -300,7 +302,9 @@ class TestGenerateImage:
     def test_handles_safety_block(self, mock_client_class: MagicMock) -> None:
         """Should return friendly error for safety blocks."""
         mock_client = MagicMock()
-        mock_client.models.generate_content.side_effect = Exception("SAFETY: Content blocked")
+        mock_client.models.generate_content.side_effect = genai_errors.ClientError(
+            code=400, response_json={"error": {"message": "SAFETY: Content blocked"}}
+        )
         mock_client_class.return_value = mock_client
 
         result = generate_image.invoke({"prompt": "inappropriate content"})

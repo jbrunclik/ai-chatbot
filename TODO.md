@@ -80,7 +80,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
 - [x] **Add backend test suite** - Created `tests/` directory with unit and integration tests covering auth, API routes, database, tools, and utilities.
 - [x] **Add frontend test suite** - Created `web/tests/` with Vitest (unit/component) and Playwright (E2E/visual) tests. Mock server for E2E tests in `tests/e2e-server.py`.
-- [ ] **Catch specific exceptions** - Multiple bare `except Exception:` handlers in `chat_agent.py`, `routes.py`, and `images.py`. Catch specific exceptions instead.
+- [x] **Catch specific exceptions** - Replaced bare `except Exception:` with specific exceptions (`binascii.Error`, `DDGSException`, `genai_errors.ClientError`, etc.) where appropriate. Kept broad handlers only for top-level error recovery (streaming threads, request handlers).
 
 ### 🟠 Security
 - [ ] **Add server-side file type validation** - File upload relies on client MIME type. Add magic bytes verification using `python-magic`.
@@ -139,8 +139,8 @@ This file tracks planned features, improvements, and technical debt.
 - [x] **Add API response compression** - Enable gzip compression via nginx (see README deployment section)
 - [ ] **Remove unused dependencies** - Audit and remove any unused npm/Python dependencies
 - [ ] **Optimize image processing** - Consider async/background processing for thumbnail generation on large images
-- [ ] **Make HTTP timeout configurable** - `tools.py` has hardcoded 30s timeout; move to config
-- [ ] **Make thumbnail dimensions configurable** - `images.py` has hardcoded 400x400; move to config
+- [x] **Make HTTP timeout configurable** - `tools.py` uses `Config.TOOL_TIMEOUT` (default 90s)
+- [x] **Make thumbnail dimensions configurable** - `Config.THUMBNAIL_MAX_SIZE` (default 400x400) and `Config.THUMBNAIL_QUALITY` (default 85)
 
 ## Notes
 

@@ -1,11 +1,12 @@
 """Image processing utilities for thumbnail generation."""
 
 import base64
+import binascii
 import io
 import json
 from typing import Any
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from src.config import Config
 from src.utils.logging import get_logger
@@ -78,7 +79,7 @@ def generate_thumbnail(
         output.seek(0)
         return base64.b64encode(output.read()).decode("utf-8")
 
-    except Exception as e:
+    except (binascii.Error, UnidentifiedImageError, OSError) as e:
         logger.error(
             "Error generating thumbnail",
             extra={"mime_type": mime_type, "error": str(e)},

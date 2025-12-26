@@ -45,6 +45,7 @@ from collections.abc import Generator
 from datetime import datetime
 from typing import Annotated, Any, Literal, TypedDict, cast
 
+from google.api_core.exceptions import GoogleAPIError
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -660,6 +661,7 @@ class ChatAgent:
                 # Text files - include as text block
                 try:
                     import base64
+                    import binascii
 
                     decoded = base64.b64decode(data).decode("utf-8")
                     file_name = file.get("name", "file")
@@ -669,8 +671,8 @@ class ChatAgent:
                             "text": f"\n--- Content of {file_name} ---\n{decoded}\n--- End of {file_name} ---\n",
                         }
                     )
-                except Exception:
-                    # If decoding fails, skip the file
+                except (binascii.Error, UnicodeDecodeError):
+                    # If decoding fails (invalid base64 or non-UTF-8), skip the file
                     pass
 
         return blocks if blocks else text
@@ -990,8 +992,8 @@ Title:"""
         final_title = title or user_message[: Config.TITLE_FALLBACK_LENGTH]
         logger.debug("Title generated", extra={"title": final_title})
         return final_title
-    except Exception as e:
-        # Fallback to truncated message on any error
+    except (GoogleAPIError, ValueError, TimeoutError) as e:
+        # Fallback to truncated message on API or parsing errors
         logger.warning("Title generation failed, using fallback", extra={"error": str(e)})
         fallback_len = Config.TITLE_FALLBACK_LENGTH
         return user_message[:fallback_len] + ("..." if len(user_message) > fallback_len else "")
