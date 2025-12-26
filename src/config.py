@@ -68,6 +68,10 @@ class Config:
     # Slow query logging (only active in development/debug mode)
     SLOW_QUERY_THRESHOLD_MS: int = int(os.getenv("SLOW_QUERY_THRESHOLD_MS", "100"))
 
+    # User location (for contextual responses - units, locale, recommendations)
+    # Format: "City, Country" (e.g., "Prague, Czech Republic" or "New York, USA")
+    USER_LOCATION: str = os.getenv("USER_LOCATION", "")
+
     # Cost tracking
     COST_CURRENCY: str = os.getenv("COST_CURRENCY", "CZK").upper()  # Default to CZK
     COST_HISTORY_MAX_MONTHS: int = int(
