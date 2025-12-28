@@ -793,13 +793,34 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
         usage_info: dict[str, Any] = {}
         client_connected = True  # Track if client is still connected
 
+        # Define a type for the save result to make it clearer
+        class SaveResult:
+            """Result from save_message_to_db with extracted data for done event."""
+
+            def __init__(
+                self,
+                message_id: str,
+                sources: list[dict[str, str]],
+                generated_images_meta: list[dict[str, str]],
+                gen_image_files: list[dict[str, Any]],
+                generated_title: str | None,
+            ) -> None:
+                self.message_id = message_id
+                self.sources = sources
+                self.generated_images_meta = generated_images_meta
+                self.gen_image_files = gen_image_files
+                self.generated_title = generated_title
+
         def save_message_to_db(
             content: str,
             meta: dict[str, Any],
             tools: list[dict[str, Any]],
             usage: dict[str, Any],
-        ) -> None:
-            """Save message to database. Called from both generator and cleanup thread."""
+        ) -> SaveResult | None:
+            """Save message to database. Called from both generator and cleanup thread.
+
+            Returns SaveResult with extracted data for building done event, or None on error.
+            """
             try:
                 # Extract metadata fields
                 sources, generated_images_meta = extract_metadata_fields(meta)
@@ -817,6 +838,7 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
 
                 # Get the FULL tool results (with _full_result) captured before stripping
                 # This is needed for extracting generated images
+                # NOTE: get_full_tool_results() POPS the results, so we can only call it once!
                 full_tool_results = get_full_tool_results(stream_request_id)
                 set_current_request_id(None)  # Clean up
 
@@ -886,6 +908,15 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                         "client_connected": client_connected,
                     },
                 )
+
+                # Return extracted data for building done event
+                return SaveResult(
+                    message_id=assistant_msg.id,
+                    sources=sources,
+                    generated_images_meta=generated_images_meta,
+                    gen_image_files=gen_image_files,
+                    generated_title=generated_title,
+                )
             except Exception as e:
                 logger.error(
                     "Error saving stream message to DB",
@@ -896,6 +927,7 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
                     },
                     exc_info=True,
                 )
+                return None
 
         try:
             while True:
@@ -982,35 +1014,26 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
             # Save message to DB (this will complete even if client disconnected)
             # Use try/finally to ensure this runs even if generator stops early
             try:
-                save_message_to_db(clean_content, metadata, tool_results, usage_info)
+                # save_message_to_db returns extracted data for building the done event
+                # This is important because get_full_tool_results() POPS the results,
+                # so we can only retrieve them once (inside save_message_to_db)
+                save_result = save_message_to_db(clean_content, metadata, tool_results, usage_info)
 
                 # Build done event if we have the message (for client that's still connected)
-                if client_connected and clean_content:
-                    # Get message ID from DB (message was just saved)
+                if client_connected and clean_content and save_result:
+                    # Get the saved message from DB to get the ID
                     messages = db.get_messages(conv_id)
                     if messages and messages[-1].role == "assistant":
                         assistant_msg = messages[-1]
-                        # Extract metadata again for done event
-                        sources, generated_images_meta = extract_metadata_fields(metadata)
-                        full_tool_results = get_full_tool_results(stream_request_id)
-                        gen_image_files = extract_generated_images_from_tool_results(
-                            full_tool_results
-                        )
 
-                        # Get generated title if it was created
-                        updated_conv = db.get_conversation(conv_id, user.id)
-                        generated_title = (
-                            updated_conv.title
-                            if updated_conv and updated_conv.title != "New Conversation"
-                            else None
-                        )
-
+                        # Use the extracted data from save_result instead of calling
+                        # get_full_tool_results again (which would return empty list)
                         done_data = build_stream_done_event(
                             assistant_msg,
-                            gen_image_files,
-                            sources,
-                            generated_images_meta,
-                            conversation_title=generated_title,
+                            save_result.gen_image_files,
+                            save_result.sources,
+                            save_result.generated_images_meta,
+                            conversation_title=save_result.generated_title,
                         )
 
                         # Try to send done event, but continue even if client disconnected

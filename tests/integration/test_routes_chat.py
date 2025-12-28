@@ -381,3 +381,266 @@ class TestChatWithFiles:
             )
 
         assert response.status_code == 200
+
+
+class TestChatWithGeneratedImages:
+    """Tests for chat endpoints with generated images from tools.
+
+    Note: These tests mock ChatAgent but also populate _full_tool_results to simulate
+    what the tool node would capture in production. The tool node wrapper (create_tool_node)
+    captures full results into _full_tool_results before stripping _full_result,
+    and routes.py retrieves them via get_full_tool_results().
+    """
+
+    def test_batch_chat_with_generated_image(
+        self,
+        client: FlaskClient,
+        auth_headers: dict[str, str],
+        test_conversation: Conversation,
+        test_database: Database,
+        sample_png_base64: str,
+    ) -> None:
+        """Should extract generated images from tool results and include in response."""
+        from src.agent.chat_agent import _current_request_id, _full_tool_results
+
+        # Build tool result with _full_result containing image data
+        tool_result_content = json.dumps(
+            {
+                "success": True,
+                "prompt": "a red square",
+                "aspect_ratio": "1:1",
+                "message": "Image generated successfully.",
+                "_full_result": {
+                    "image": {
+                        "data": sample_png_base64,
+                        "mime_type": "image/png",
+                    },
+                },
+                "usage_metadata": {
+                    "prompt_token_count": 50,
+                    "candidates_token_count": 0,
+                    "thoughts_token_count": 0,
+                },
+            }
+        )
+
+        with patch("src.api.routes.ChatAgent") as mock_agent_class:
+            mock_agent = MagicMock()
+
+            # Mock chat_batch to return the response AND simulate tool node capture
+            def mock_chat_batch(*args: Any, **kwargs: Any) -> Any:
+                # Simulate what the tool node does: capture full results
+                request_id = _current_request_id.get()
+                if request_id:
+                    _full_tool_results[request_id] = [
+                        {"type": "tool", "content": tool_result_content}
+                    ]
+                return (
+                    'Here is the image I generated for you.\n\n<!-- METADATA:\n{"generated_images": [{"prompt": "a red square"}]}\n-->',
+                    [{"type": "tool", "content": tool_result_content}],
+                    {"input_tokens": 100, "output_tokens": 50},
+                )
+
+            mock_agent.chat_batch = mock_chat_batch
+            mock_agent_class.return_value = mock_agent
+
+            response = client.post(
+                f"/api/conversations/{test_conversation.id}/chat/batch",
+                headers=auth_headers,
+                json={"message": "Generate a red square"},
+            )
+
+        assert response.status_code == 200
+        data = json.loads(response.data)
+
+        # Response should include files (generated images)
+        assert "files" in data, "Response should include files with generated images"
+        assert len(data["files"]) == 1
+        assert data["files"][0]["type"] == "image/png"
+        assert "messageId" in data["files"][0]
+
+        # Response should include generated_images metadata
+        assert "generated_images" in data
+        assert len(data["generated_images"]) == 1
+        assert data["generated_images"][0]["prompt"] == "a red square"
+
+        # Verify message was saved with files
+        messages = test_database.get_messages(test_conversation.id)
+        assistant_msg = messages[-1]
+        assert assistant_msg.role == "assistant"
+        assert assistant_msg.files is not None
+        assert len(assistant_msg.files) == 1
+
+    def test_streaming_chat_with_generated_image(
+        self,
+        client: FlaskClient,
+        auth_headers: dict[str, str],
+        test_conversation: Conversation,
+        test_database: Database,
+        sample_png_base64: str,
+    ) -> None:
+        """Should extract generated images during streaming and include in done event.
+
+        This test verifies the fix for a regression where generated images
+        weren't showing up until the conversation was reloaded.
+        """
+        import time
+
+        from src.agent.chat_agent import _current_request_id, _full_tool_results
+
+        # Build tool result with _full_result containing image data
+        tool_result_content = json.dumps(
+            {
+                "success": True,
+                "prompt": "a blue circle",
+                "aspect_ratio": "1:1",
+                "message": "Image generated successfully.",
+                "_full_result": {
+                    "image": {
+                        "data": sample_png_base64,
+                        "mime_type": "image/png",
+                    },
+                },
+                "usage_metadata": {
+                    "prompt_token_count": 50,
+                    "candidates_token_count": 0,
+                    "thoughts_token_count": 0,
+                },
+            }
+        )
+
+        with patch("src.api.routes.ChatAgent") as mock_agent_class:
+            mock_agent = MagicMock()
+
+            def mock_stream(*args: Any, **kwargs: Any) -> Any:
+                """Mock stream that yields tokens, then final tuple with tool results.
+
+                Also simulates the tool node capturing full results into _full_tool_results.
+                """
+                # Simulate what the tool node does: capture full results
+                # This happens during graph execution (before yielding final tuple)
+                request_id = _current_request_id.get()
+                if request_id:
+                    _full_tool_results[request_id] = [
+                        {"type": "tool", "content": tool_result_content}
+                    ]
+
+                yield "Here"
+                yield " is"
+                yield " the"
+                yield " image"
+                # Final tuple: (content, metadata, tool_results, usage_info)
+                yield (
+                    'Here is the image\n\n<!-- METADATA:\n{"generated_images": [{"prompt": "a blue circle"}]}\n-->',
+                    {"generated_images": [{"prompt": "a blue circle"}]},
+                    [{"type": "tool", "content": tool_result_content}],
+                    {"input_tokens": 100, "output_tokens": 50},
+                )
+
+            mock_agent.stream_chat = mock_stream
+            mock_agent_class.return_value = mock_agent
+
+            response = client.post(
+                f"/api/conversations/{test_conversation.id}/chat/stream",
+                headers=auth_headers,
+                json={"message": "Generate a blue circle"},
+            )
+
+        assert response.status_code == 200
+        assert "text/event-stream" in response.content_type
+
+        # Parse SSE events
+        response_text = response.data.decode("utf-8")
+        events = []
+        for line in response_text.split("\n"):
+            if line.startswith("data: "):
+                try:
+                    event = json.loads(line[6:])
+                    events.append(event)
+                except json.JSONDecodeError:
+                    pass
+
+        # Find done event
+        done_events = [e for e in events if e.get("type") == "done"]
+        assert len(done_events) == 1, f"Expected 1 done event, got {len(done_events)}"
+        done_event = done_events[0]
+
+        # Verify done event includes files
+        assert "files" in done_event, f"Done event should include files. Event: {done_event}"
+        assert len(done_event["files"]) == 1
+        assert done_event["files"][0]["type"] == "image/png"
+        assert "messageId" in done_event["files"][0]
+
+        # Verify done event includes generated_images metadata
+        assert "generated_images" in done_event
+        assert len(done_event["generated_images"]) == 1
+        assert done_event["generated_images"][0]["prompt"] == "a blue circle"
+
+        # Wait for cleanup thread to ensure message is saved
+        time.sleep(1.5)
+
+        # Verify message was saved with files
+        messages = test_database.get_messages(test_conversation.id)
+        assistant_msg = messages[-1]
+        assert assistant_msg.role == "assistant"
+        assert assistant_msg.files is not None, "Message should have files saved"
+        assert len(assistant_msg.files) == 1, f"Expected 1 file, got {len(assistant_msg.files)}"
+
+    def test_streaming_without_generated_images(
+        self,
+        client: FlaskClient,
+        auth_headers: dict[str, str],
+        test_conversation: Conversation,
+    ) -> None:
+        """Verify streaming works correctly when no images are generated.
+
+        This tests the normal case where no generate_image tool is used.
+        The done event should not include files when no images are generated.
+        """
+        import time
+
+        with patch("src.api.routes.ChatAgent") as mock_agent_class:
+            mock_agent = MagicMock()
+
+            def mock_stream(*args: Any, **kwargs: Any) -> Any:
+                yield "Test"
+                yield " response"
+                yield (
+                    "Test response",
+                    {},
+                    [],  # No tool results
+                    {"input_tokens": 10, "output_tokens": 5},
+                )
+
+            mock_agent.stream_chat = mock_stream
+            mock_agent_class.return_value = mock_agent
+
+            response = client.post(
+                f"/api/conversations/{test_conversation.id}/chat/stream",
+                headers=auth_headers,
+                json={"message": "Test"},
+            )
+
+        assert response.status_code == 200
+
+        # Wait for background threads
+        time.sleep(1.5)
+
+        # Parse response to verify done event is present and doesn't have files
+        response_text = response.data.decode("utf-8")
+        found_done = False
+        for line in response_text.split("\n"):
+            if line.startswith("data: "):
+                try:
+                    event = json.loads(line[6:])
+                    if event.get("type") == "done":
+                        found_done = True
+                        # Should not have files when no images generated
+                        assert "files" not in event, (
+                            f"Done event should not have files when no images generated. "
+                            f"Event: {event}"
+                        )
+                except json.JSONDecodeError:
+                    pass
+
+        assert found_done, "Done event was not found in stream"

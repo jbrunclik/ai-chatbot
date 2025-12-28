@@ -410,6 +410,13 @@ The app implements several optimizations to minimize token costs:
 - Context variables (used to track request ID) don't automatically inherit to new threads in Python
 - The background thread explicitly calls `set_current_request_id()` to set up its own context
 
+**IMPORTANT - `get_full_tool_results()` pops results:**
+- `get_full_tool_results(request_id)` **removes** results from the dict when called (it's a `.pop()`)
+- You can only call it ONCE per request - subsequent calls return empty list
+- In streaming, `save_message_to_db()` returns a `SaveResult` object with extracted data
+- The done event builder reuses data from `SaveResult` instead of calling `get_full_tool_results()` again
+- If you need the results in multiple places, store them in a variable after the first call
+
 **Implementation details:**
 - [tools.py](src/agent/tools.py) - `generate_image` returns image in `_full_result` field
 - [chat_agent.py](src/agent/chat_agent.py) - `create_tool_node()` wraps ToolNode to strip `_full_result`, `set_current_request_id()` and `get_full_tool_results()` for per-request capture
