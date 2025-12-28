@@ -132,6 +132,149 @@ test.describe('Chat - Model Selection', () => {
     const modelOptions = modelDropdown.locator('.model-option');
     await expect(modelOptions.first()).toBeVisible();
   });
+
+  /**
+   * REGRESSION TEST: Model selection for new (temp) conversations
+   *
+   * This test catches a regression where selecting a model on a new conversation
+   * (before any message is sent) would fail because:
+   * 1. New conversations have a temp ID (temp-...) that doesn't exist in backend
+   * 2. The model selector tried to call the API to update the model
+   * 3. The API call failed, showing an error toast
+   *
+   * The fix should:
+   * - For temp conversations, update the model locally in the store
+   * - Not call the API until the conversation is persisted
+   * - The selected model should be used when the conversation is created
+   */
+  test('can select model on new conversation before sending message', async ({ page }) => {
+    const modelSelectorBtn = page.locator('#model-selector-btn');
+    const modelDropdown = page.locator('#model-dropdown');
+
+    // Get initial model name
+    const initialModelName = await page.locator('#current-model-name').textContent();
+
+    // Open dropdown
+    await modelSelectorBtn.click();
+    await expect(modelDropdown).not.toHaveClass(/hidden/);
+
+    // Get all model options
+    const modelOptions = modelDropdown.locator('.model-option');
+    const optionCount = await modelOptions.count();
+    expect(optionCount).toBeGreaterThan(1); // Ensure we have multiple models to choose from
+
+    // Find a model that is NOT currently selected (no .selected class)
+    let differentModelOption = null;
+    let differentModelName = null;
+    for (let i = 0; i < optionCount; i++) {
+      const option = modelOptions.nth(i);
+      const isSelected = await option.evaluate((el) => el.classList.contains('selected'));
+      if (!isSelected) {
+        differentModelOption = option;
+        differentModelName = await option.locator('.model-name').textContent();
+        break;
+      }
+    }
+
+    // Ensure we found a different model
+    expect(differentModelOption).not.toBeNull();
+    expect(differentModelName).not.toBe(initialModelName);
+
+    // Click on the different model
+    await differentModelOption!.click();
+
+    // Dropdown should close
+    await expect(modelDropdown).toHaveClass(/hidden/);
+
+    // Model name should be updated in the button
+    const newModelName = await page.locator('#current-model-name').textContent();
+    expect(newModelName).toBe(differentModelName);
+
+    // No error toast should appear (this was the bug)
+    // Wait a moment for any async error handling
+    await page.waitForTimeout(500);
+    // Toast has class "toast toast-error" for error type
+    const errorToast = page.locator('.toast-error');
+    await expect(errorToast).toHaveCount(0);
+
+    // Now send a message - the conversation should be created with the selected model
+    // Disable streaming for reliable response
+    const streamBtn = page.locator('#stream-btn');
+    const isPressed = await streamBtn.getAttribute('aria-pressed');
+    if (isPressed === 'true') {
+      await streamBtn.click();
+    }
+
+    await page.fill('#message-input', 'Test with selected model');
+    await page.click('#send-btn');
+
+    // Wait for response
+    await page.waitForSelector('.message.assistant', { timeout: 10000 });
+
+    // The model should still be the one we selected
+    const finalModelName = await page.locator('#current-model-name').textContent();
+    expect(finalModelName).toBe(differentModelName);
+  });
+
+  test('model selection persists after sending first message', async ({ page }) => {
+    const modelSelectorBtn = page.locator('#model-selector-btn');
+    const modelDropdown = page.locator('#model-dropdown');
+
+    // Disable streaming for reliable response
+    const streamBtn = page.locator('#stream-btn');
+    const isPressed = await streamBtn.getAttribute('aria-pressed');
+    if (isPressed === 'true') {
+      await streamBtn.click();
+    }
+
+    // Open dropdown and select a non-default model
+    await modelSelectorBtn.click();
+    await expect(modelDropdown).not.toHaveClass(/hidden/);
+
+    // Get all model options and find one that's not selected
+    const modelOptions = modelDropdown.locator('.model-option');
+    let targetOption = null;
+    let targetModelName = null;
+    const optionCount = await modelOptions.count();
+    for (let i = 0; i < optionCount; i++) {
+      const option = modelOptions.nth(i);
+      const isSelected = await option.evaluate((el) => el.classList.contains('selected'));
+      if (!isSelected) {
+        targetOption = option;
+        targetModelName = await option.locator('.model-name').textContent();
+        break;
+      }
+    }
+
+    expect(targetOption).not.toBeNull();
+    await targetOption!.click();
+
+    // Verify model is selected
+    const selectedModelName = await page.locator('#current-model-name').textContent();
+    expect(selectedModelName).toBe(targetModelName);
+
+    // Send first message (this persists the conversation)
+    await page.fill('#message-input', 'First message with selected model');
+    await page.click('#send-btn');
+    await page.waitForSelector('.message.assistant', { timeout: 10000 });
+
+    // Model should still be the one we selected
+    expect(await page.locator('#current-model-name').textContent()).toBe(targetModelName);
+
+    // Switch to another conversation and back
+    await page.click('#new-chat-btn');
+
+    // Switch back to the original conversation
+    const convItems = page.locator('.conversation-item-wrapper');
+    await expect(convItems).toHaveCount(2);
+    await convItems.last().click(); // Original conversation
+
+    // Wait for conversation to load
+    await page.waitForSelector('.message.user', { timeout: 10000 });
+
+    // Model should still be the one we selected for this conversation
+    expect(await page.locator('#current-model-name').textContent()).toBe(targetModelName);
+  });
 });
 
 test.describe('Chat - Force Tools', () => {
