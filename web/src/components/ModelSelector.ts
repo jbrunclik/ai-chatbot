@@ -60,6 +60,13 @@ function closeModelDropdown(): void {
 }
 
 /**
+ * Check if a conversation ID is temporary (not yet saved to DB)
+ */
+function isTempConversation(convId: string): boolean {
+  return convId.startsWith('temp-');
+}
+
+/**
  * Select a model
  */
 async function selectModel(modelId: string): Promise<void> {
@@ -80,6 +87,15 @@ async function selectModel(modelId: string): Promise<void> {
 
   // Update conversation on server if one is selected
   if (currentConversation) {
+    // For temp conversations (not yet persisted), just update locally
+    // The model will be used when the conversation is created on first message
+    if (isTempConversation(currentConversation.id)) {
+      store.updateConversation(currentConversation.id, { model: modelId });
+      log.debug('Updated model for temp conversation', { modelId, conversationId: currentConversation.id });
+      return;
+    }
+
+    // For persisted conversations, update on server
     try {
       await conversationsApi.update(currentConversation.id, { model: modelId });
       store.updateConversation(currentConversation.id, { model: modelId });
