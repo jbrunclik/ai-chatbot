@@ -1409,6 +1409,32 @@ When I correct Claude's approach, the reasoning is documented here to prevent re
 **Context**: iOS Safari has issues with inline onclick handlers on dynamically created elements
 **Avoid**: Inline `onclick` attributes in template strings
 
+### innerHTML Usage
+
+**Preference**: Minimize innerHTML usage; use `textContent`, `createElement`, or DOM helpers where possible
+**Context**: innerHTML parses HTML and can be a security risk if misused. Using DOM methods is more explicit about intent.
+
+**When innerHTML is ACCEPTABLE:**
+- Setting SVG icons from [icons.ts](web/src/utils/icons.ts) (SVG markup must be rendered as HTML)
+- Rendering markdown content from `renderMarkdown()` (returns sanitized HTML)
+- Complex HTML structures that would be cumbersome to build with createElement (e.g., app shell, modals)
+- Any content that legitimately needs HTML markup (line breaks as `<br>`, styled elements)
+
+**When to AVOID innerHTML:**
+- Clearing element content → Use `clearElement(element)` from [dom.ts](web/src/utils/dom.ts)
+- Setting plain text → Use `element.textContent = text`
+- Building simple lists → Consider `createElement` with loops
+
+**Security requirements:**
+- ALWAYS use `escapeHtml()` for any user-controlled content before interpolating into innerHTML
+- SVG icons from icons.ts are safe (static constants, not user input)
+- Markdown is rendered through marked.js which handles sanitization
+
+**Key helpers in [dom.ts](web/src/utils/dom.ts):**
+- `clearElement(element)` - Clear all content (preferred over `innerHTML = ''`)
+- `createElement(tag, attrs, children)` - Build elements programmatically
+- `escapeHtml(text)` - Escape HTML special characters for safe interpolation
+
 ### Icons
 
 **Preference**: Centralize SVG icons in [icons.ts](web/src/utils/icons.ts)

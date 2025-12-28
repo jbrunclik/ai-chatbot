@@ -158,3 +158,15 @@ export function showElement(element: HTMLElement): void {
 export function hideElement(element: HTMLElement): void {
   element.classList.add('hidden');
 }
+
+/**
+ * Clear all children from an element
+ *
+ * Preferred over `element.innerHTML = ''` because:
+ * - More explicit about intent (clearing content, not setting HTML)
+ * - Avoids HTML parsing overhead
+ * - Follows the principle of using textContent/DOM methods over innerHTML
+ */
+export function clearElement(element: HTMLElement): void {
+  element.textContent = '';
+}

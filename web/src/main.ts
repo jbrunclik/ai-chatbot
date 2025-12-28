@@ -45,7 +45,7 @@ import { initVoiceInput, stopVoiceRecording } from './components/VoiceInput';
 import { initScrollToBottom, checkScrollButtonVisibility } from './components/ScrollToBottom';
 import { initVersionBanner } from './components/VersionBanner';
 import { createSwipeHandler, isTouchDevice, resetSwipeStates } from './gestures/swipe';
-import { getElementById, isScrolledToBottom } from './utils/dom';
+import { getElementById, isScrolledToBottom, clearElement } from './utils/dom';
 import { enableScrollOnImageLoad, getThumbnailObserver, observeThumbnail, programmaticScrollToBottom } from './utils/thumbnails';
 import { ATTACH_ICON, CLOSE_ICON, SEND_ICON, CHECK_ICON, MICROPHONE_ICON, STREAM_ICON, STREAM_OFF_ICON, SEARCH_ICON, SPARKLES_ICON, PLUS_ICON } from './utils/icons';
 import { DEFAULT_CONVERSATION_TITLE } from './types/api';
@@ -245,7 +245,7 @@ async function init(): Promise<void> {
     // Re-render Google Sign-In button
     const loginBtn = getElementById<HTMLDivElement>('google-login-btn');
     if (loginBtn) {
-      loginBtn.innerHTML = ''; // Clear any existing content
+      clearElement(loginBtn);
       renderGoogleButton(loginBtn);
     }
   });

@@ -1,4 +1,4 @@
-import { escapeHtml, getElementById, autoResizeTextarea } from '../utils/dom';
+import { escapeHtml, getElementById, autoResizeTextarea, clearElement } from '../utils/dom';
 import { getFileIcon, CLOSE_ICON } from '../utils/icons';
 import { useStore } from '../state/store';
 import type { FileUpload } from '../types/api';
@@ -102,7 +102,7 @@ export function renderFilePreview(): void {
 
   if (pendingFiles.length === 0) {
     container.classList.add('hidden');
-    container.innerHTML = '';
+    clearElement(container);
     return;
   }
 
