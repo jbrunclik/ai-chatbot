@@ -861,12 +861,14 @@ class MyRequest(BaseModel):
 ```python
 from src.api.schemas import MyRequest
 from src.api.validation import validate_request
+from src.db.models import User
 
 @api.route("/endpoint", methods=["POST"])
 @require_auth
 @validate_request(MyRequest)
-def my_endpoint(data: MyRequest) -> tuple[dict, int]:
-    # data is the validated Pydantic model
+def my_endpoint(user: User, data: MyRequest) -> tuple[dict, int]:
+    # user is injected by @require_auth
+    # data is the validated Pydantic model from @validate_request
     name = data.name
     count = data.count
     ...
@@ -877,13 +879,13 @@ def my_endpoint(data: MyRequest) -> tuple[dict, int]:
 Decorators are applied bottom-to-top, so the order matters:
 ```python
 @api.route("/endpoint", methods=["POST"])
-@require_auth           # 2nd: checks auth
-@validate_request(...)  # 1st: validates JSON
-def handler(data):
+@require_auth           # 2nd: checks auth, injects user
+@validate_request(...)  # 1st: validates JSON, appends data after user
+def handler(user: User, data: MySchema):
     ...
 ```
 
-This means auth errors return before validation is attempted (correct behavior - don't validate requests from unauthenticated users).
+This means auth errors return before validation is attempted (correct behavior - don't validate requests from unauthenticated users). The `user` argument comes first (from `@require_auth`), followed by `data` (from `@validate_request`).
 
 ### Two-Phase File Validation
 
@@ -1482,3 +1484,32 @@ The app supports multiple active requests across different conversations simulta
 **Key files:**
 - [main.ts](web/src/main.ts) - Request tracking, conversation switching logic, UI update guards
 - [routes.py](src/api/routes.py) - Client disconnection detection, cleanup threads, message persistence
+
+### @require_auth Injects User
+
+The `@require_auth` decorator injects the authenticated `User` as the first argument to route handlers. This eliminates the need for `get_current_user()` calls and makes the contract explicit in the function signature.
+
+**Pattern:**
+```python
+@api.route("/endpoint", methods=["GET"])
+@require_auth
+def my_endpoint(user: User) -> dict:
+    # user is guaranteed to be a valid User - decorator handles auth errors
+    return {"user_id": user.id}
+```
+
+**With `@validate_request`:**
+When combined with `@validate_request`, user comes first, then validated data:
+```python
+@api.route("/endpoint", methods=["POST"])
+@require_auth
+@validate_request(MySchema)
+def my_endpoint(user: User, data: MySchema) -> dict:
+    # user from @require_auth, data from @validate_request
+    return {"user_id": user.id, "value": data.value}
+```
+
+**Key files:**
+- [jwt_auth.py](src/auth/jwt_auth.py) - `@require_auth` decorator injects user
+- [validation.py](src/api/validation.py) - `@validate_request` appends validated data after user
+- [routes.py](src/api/routes.py) - All routes follow this pattern

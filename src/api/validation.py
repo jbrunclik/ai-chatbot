@@ -81,18 +81,20 @@ def validate_request[T: BaseModel](
         @api.route("/endpoint", methods=["POST"])
         @require_auth
         @validate_request(MyRequestSchema)
-        def my_endpoint(data: MyRequestSchema) -> ...:
+        def my_endpoint(user: User, data: MyRequestSchema) -> ...:
+            # user is injected by @require_auth
             # data is the validated Pydantic model instance
             ...
 
     The decorator:
     1. Parses request JSON using get_request_json()
     2. Validates against the schema
-    3. On success: passes validated model as first positional arg
+    3. On success: inserts validated model after injected args (e.g., user from @require_auth)
     4. On failure: returns standardized error response
 
     Note: This decorator should be placed AFTER @require_auth so that
-    auth errors are returned before validation is attempted.
+    auth errors are returned before validation is attempted. The validated
+    data is inserted after any args injected by outer decorators (like user).
     """
 
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
@@ -109,8 +111,9 @@ def validate_request[T: BaseModel](
             except ValidationError as e:
                 return pydantic_to_error_response(e)
 
-            # Pass validated data as first positional argument
-            return f(validated, *args, **kwargs)
+            # Insert validated data after any injected args (like user from @require_auth)
+            # but before URL parameters (which come via kwargs from Flask)
+            return f(*args, validated, **kwargs)
 
         return wrapper
 
