@@ -1,4 +1,4 @@
-import { escapeHtml, getElementById } from '../utils/dom';
+import { escapeHtml, getElementById, clearElement } from '../utils/dom';
 import { renderUserAvatarHtml } from '../utils/avatar';
 import { DELETE_ICON, LOGOUT_ICON } from '../utils/icons';
 import { useStore } from '../state/store';
@@ -73,7 +73,7 @@ export function renderUserInfo(): void {
   const { user } = useStore.getState();
 
   if (!user) {
-    container.innerHTML = '';
+    clearElement(container);
     return;
   }
 

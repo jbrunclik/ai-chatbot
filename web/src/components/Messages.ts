@@ -1,4 +1,4 @@
-import { escapeHtml, getElementById, scrollToBottom, isScrolledToBottom } from '../utils/dom';
+import { escapeHtml, getElementById, scrollToBottom, isScrolledToBottom, clearElement } from '../utils/dom';
 import { renderMarkdown, highlightAllCodeBlocks } from '../utils/markdown';
 import {
   observeThumbnail,
@@ -74,7 +74,7 @@ export function renderMessages(messages: Message[]): void {
     return;
   }
 
-  container.innerHTML = '';
+  clearElement(container);
 
   // Defer image observation until after we count them
   // This prevents IntersectionObserver from firing synchronously before we count

@@ -14,6 +14,7 @@ import {
   toggleClass,
   showElement,
   hideElement,
+  clearElement,
 } from '@/utils/dom';
 
 describe('escapeHtml', () => {
@@ -300,5 +301,37 @@ describe('hideElement', () => {
     div.classList.add('hidden');
     hideElement(div);
     expect(div.classList.contains('hidden')).toBe(true);
+  });
+});
+
+describe('clearElement', () => {
+  it('removes all text content', () => {
+    const div = document.createElement('div');
+    div.textContent = 'Hello World';
+    clearElement(div);
+    expect(div.textContent).toBe('');
+  });
+
+  it('removes all child elements', () => {
+    const div = document.createElement('div');
+    div.innerHTML = '<span>Child 1</span><span>Child 2</span>';
+    expect(div.children.length).toBe(2);
+    clearElement(div);
+    expect(div.children.length).toBe(0);
+    expect(div.innerHTML).toBe('');
+  });
+
+  it('handles already empty elements', () => {
+    const div = document.createElement('div');
+    clearElement(div);
+    expect(div.textContent).toBe('');
+    expect(div.children.length).toBe(0);
+  });
+
+  it('removes nested content', () => {
+    const div = document.createElement('div');
+    div.innerHTML = '<div><span>Nested</span></div>';
+    clearElement(div);
+    expect(div.innerHTML).toBe('');
   });
 });
