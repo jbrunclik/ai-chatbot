@@ -39,9 +39,9 @@ from src.api.utils import (
 )
 from src.api.validation import validate_request
 from src.auth.google_auth import GoogleAuthError, is_email_allowed, verify_google_id_token
-from src.auth.jwt_auth import create_token, get_current_user, require_auth
+from src.auth.jwt_auth import create_token, require_auth
 from src.config import Config
-from src.db.models import db
+from src.db.models import User, db
 from src.utils.costs import convert_currency, format_cost
 from src.utils.files import validate_files
 from src.utils.images import extract_generated_images_from_tool_results, process_image_files
@@ -113,11 +113,8 @@ def get_client_id() -> dict[str, str]:
 
 @auth.route("/me")
 @require_auth
-def me() -> dict[str, dict[str, str | None]]:
+def me(user: User) -> dict[str, dict[str, str | None]]:
     """Get current user info."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
-
     return {
         "user": {
             "id": user.id,
@@ -130,15 +127,12 @@ def me() -> dict[str, dict[str, str | None]]:
 
 @auth.route("/refresh", methods=["POST"])
 @require_auth
-def refresh_token() -> dict[str, str]:
+def refresh_token(user: User) -> dict[str, str]:
     """Refresh the JWT token.
 
     Returns a new token with extended expiration.
     The old token remains valid until its original expiration.
     """
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
-
     logger.info("Token refresh requested", extra={"user_id": user.id})
     token = create_token(user)
     logger.info("Token refreshed successfully", extra={"user_id": user.id})
@@ -153,10 +147,8 @@ def refresh_token() -> dict[str, str]:
 
 @api.route("/conversations", methods=["GET"])
 @require_auth
-def list_conversations() -> dict[str, list[dict[str, str]]]:
+def list_conversations(user: User) -> dict[str, list[dict[str, str]]]:
     """List all conversations for the current user."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.debug("Listing conversations", extra={"user_id": user.id})
     conversations = db.list_conversations(user.id)
     logger.info(
@@ -180,10 +172,8 @@ def list_conversations() -> dict[str, list[dict[str, str]]]:
 @api.route("/conversations", methods=["POST"])
 @require_auth
 @validate_request(CreateConversationRequest)
-def create_conversation(data: CreateConversationRequest) -> tuple[dict[str, str], int]:
+def create_conversation(user: User, data: CreateConversationRequest) -> tuple[dict[str, str], int]:
     """Create a new conversation."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     model = data.model or Config.DEFAULT_MODEL
     log_payload_snippet(logger, {"model": model})
 
@@ -204,15 +194,13 @@ def create_conversation(data: CreateConversationRequest) -> tuple[dict[str, str]
 
 @api.route("/conversations/<conv_id>", methods=["GET"])
 @require_auth
-def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
+def get_conversation(user: User, conv_id: str) -> tuple[dict[str, Any], int]:
     """Get a conversation with its messages.
 
     Optimized: Only includes file metadata, not thumbnails or full file data.
     Thumbnails are fetched on-demand via /api/messages/<message_id>/files/<file_index>/thumbnail.
     Full files can be fetched via /api/messages/<message_id>/files/<file_index>.
     """
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.debug("Getting conversation", extra={"user_id": user.id, "conversation_id": conv_id})
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
@@ -275,11 +263,9 @@ def get_conversation(conv_id: str) -> tuple[dict[str, Any], int]:
 @require_auth
 @validate_request(UpdateConversationRequest)
 def update_conversation(
-    data: UpdateConversationRequest, conv_id: str
+    user: User, data: UpdateConversationRequest, conv_id: str
 ) -> tuple[dict[str, str], int]:
     """Update a conversation (title, model)."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     title = data.title
     model = data.model
     log_payload_snippet(logger, {"title": title, "model": model})
@@ -301,11 +287,8 @@ def update_conversation(
 
 @api.route("/conversations/<conv_id>", methods=["DELETE"])
 @require_auth
-def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
+def delete_conversation(user: User, conv_id: str) -> tuple[dict[str, str], int]:
     """Delete a conversation."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
-
     logger.debug("Deleting conversation", extra={"user_id": user.id, "conversation_id": conv_id})
     if not db.delete_conversation(conv_id, user.id):
         logger.warning(
@@ -326,7 +309,7 @@ def delete_conversation(conv_id: str) -> tuple[dict[str, str], int]:
 @api.route("/conversations/<conv_id>/chat/batch", methods=["POST"])
 @require_auth
 @validate_request(ChatRequest)
-def chat_batch(data: ChatRequest, conv_id: str) -> tuple[dict[str, str], int]:
+def chat_batch(user: User, data: ChatRequest, conv_id: str) -> tuple[dict[str, str], int]:
     """Send a message and get a complete response (non-streaming).
 
     Accepts JSON body with:
@@ -334,8 +317,6 @@ def chat_batch(data: ChatRequest, conv_id: str) -> tuple[dict[str, str], int]:
     - files: list[dict] (optional if message present) - array of {name, type, data} file objects
     - force_tools: list[str] (optional) - list of tool names to force (e.g. ["web_search"])
     """
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.info("Batch chat request", extra={"user_id": user.id, "conversation_id": conv_id})
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
@@ -568,7 +549,9 @@ def chat_batch(data: ChatRequest, conv_id: str) -> tuple[dict[str, str], int]:
 @api.route("/conversations/<conv_id>/chat/stream", methods=["POST"])
 @require_auth
 @validate_request(ChatRequest)
-def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, str], int]:
+def chat_stream(
+    user: User, data: ChatRequest, conv_id: str
+) -> Response | tuple[dict[str, str], int]:
     """Send a message and stream the response via Server-Sent Events.
 
     Accepts JSON body with:
@@ -579,8 +562,6 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
     Uses SSE keepalive heartbeats to prevent proxy timeouts during long LLM thinking phases.
     Keepalives are sent as SSE comments (: keepalive) which clients ignore but proxies see as activity.
     """
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.info("Stream chat request", extra={"user_id": user.id, "conversation_id": conv_id})
     conv = db.get_conversation(conv_id, user.id)
     if not conv:
@@ -1103,8 +1084,10 @@ def chat_stream(data: ChatRequest, conv_id: str) -> Response | tuple[dict[str, s
 
 @api.route("/models", methods=["GET"])
 @require_auth
-def list_models() -> dict[str, Any]:
+def list_models(user: User) -> dict[str, Any]:
     """List available models."""
+    # user parameter required by @require_auth but not used in this endpoint
+    _ = user
     return {
         "models": [
             {"id": model_id, "name": model_name} for model_id, model_name in Config.MODELS.items()
@@ -1120,8 +1103,10 @@ def list_models() -> dict[str, Any]:
 
 @api.route("/config/upload", methods=["GET"])
 @require_auth
-def get_upload_config() -> dict[str, Any]:
+def get_upload_config(user: User) -> dict[str, Any]:
     """Get file upload configuration for frontend."""
+    # user parameter required by @require_auth but not used in this endpoint
+    _ = user
     return {
         "maxFileSize": Config.MAX_FILE_SIZE,
         "maxFilesPerMessage": Config.MAX_FILES_PER_MESSAGE,
@@ -1224,15 +1209,13 @@ def readiness_check() -> tuple[dict[str, Any], int]:
 @api.route("/messages/<message_id>/files/<int:file_index>/thumbnail", methods=["GET"])
 @require_auth
 def get_message_thumbnail(
-    message_id: str, file_index: int
+    user: User, message_id: str, file_index: int
 ) -> Response | tuple[dict[str, str], int]:
     """Get a thumbnail for an image file from a message.
 
     Returns the thumbnail as binary data with appropriate content-type header.
     Falls back to full image if thumbnail doesn't exist.
     """
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.debug(
         "Getting thumbnail",
         extra={"user_id": user.id, "message_id": message_id, "file_index": file_index},
@@ -1351,13 +1334,13 @@ def get_message_thumbnail(
 
 @api.route("/messages/<message_id>/files/<int:file_index>", methods=["GET"])
 @require_auth
-def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[str, str], int]:
+def get_message_file(
+    user: User, message_id: str, file_index: int
+) -> Response | tuple[dict[str, str], int]:
     """Get a full-size file from a message.
 
     Returns the file as binary data with appropriate content-type header.
     """
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.debug(
         "Getting file",
         extra={"user_id": user.id, "message_id": message_id, "file_index": file_index},
@@ -1434,10 +1417,8 @@ def get_message_file(message_id: str, file_index: int) -> Response | tuple[dict[
 
 @api.route("/conversations/<conv_id>/cost", methods=["GET"])
 @require_auth
-def get_conversation_cost(conv_id: str) -> tuple[dict[str, Any], int]:
+def get_conversation_cost(user: User, conv_id: str) -> tuple[dict[str, Any], int]:
     """Get total cost for a conversation."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.debug(
         "Getting conversation cost", extra={"user_id": user.id, "conversation_id": conv_id}
     )
@@ -1471,10 +1452,8 @@ def get_conversation_cost(conv_id: str) -> tuple[dict[str, Any], int]:
 
 @api.route("/messages/<message_id>/cost", methods=["GET"])
 @require_auth
-def get_message_cost(message_id: str) -> tuple[dict[str, Any], int]:
+def get_message_cost(user: User, message_id: str) -> tuple[dict[str, Any], int]:
     """Get cost for a specific message."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
     logger.debug("Getting message cost", extra={"user_id": user.id, "message_id": message_id})
 
     # Verify message belongs to user
@@ -1548,11 +1527,8 @@ def get_message_cost(message_id: str) -> tuple[dict[str, Any], int]:
 
 @api.route("/users/me/costs/monthly", methods=["GET"])
 @require_auth
-def get_user_monthly_cost() -> tuple[dict[str, Any], int]:
+def get_user_monthly_cost(user: User) -> tuple[dict[str, Any], int]:
     """Get cost for the current user in a specific month."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
-
     # Get year and month from query params (default to current month)
     now = datetime.now()
     year = request.args.get("year", type=int) or now.year
@@ -1613,11 +1589,8 @@ def get_user_monthly_cost() -> tuple[dict[str, Any], int]:
 
 @api.route("/users/me/costs/history", methods=["GET"])
 @require_auth
-def get_user_cost_history() -> tuple[dict[str, Any], int]:
+def get_user_cost_history(user: User) -> tuple[dict[str, Any], int]:
     """Get monthly cost history for the current user."""
-    user = get_current_user()
-    assert user is not None  # Guaranteed by @require_auth
-
     limit = request.args.get("limit", type=int) or Config.COST_HISTORY_DEFAULT_LIMIT
     # Cap limit to prevent performance issues
     limit = min(limit, Config.COST_HISTORY_MAX_MONTHS)

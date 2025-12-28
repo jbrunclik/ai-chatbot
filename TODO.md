@@ -77,7 +77,7 @@ This file tracks planned features, improvements, and technical debt.
 - [ ] **Real-time data synchronization** - Implement mechanism to notify clients about new data (e.g., messages appearing in a chat after losing connectivity, new conversations created on different devices). Options: WebSockets for bidirectional, SSE for server-to-client updates, or polling with efficient change detection. Should handle reconnection and sync missed updates.
 
 ### 🔴 Critical / High Priority
-- [ ] **Replace assert statements with proper error handling** - `routes.py` uses `assert user is not None` after `@require_auth` which can be disabled with Python `-O` flag. Replace with explicit error responses.
+- [x] **Refactor @require_auth to inject user** - `@require_auth` decorator now injects the authenticated `User` as the first argument to route handlers. `@validate_request` appends validated data after user. No more `get_current_user()` + assert pattern.
 - [x] **Add backend test suite** - Created `tests/` directory with unit and integration tests covering auth, API routes, database, tools, and utilities.
 - [x] **Add frontend test suite** - Created `web/tests/` with Vitest (unit/component) and Playwright (E2E/visual) tests. Mock server for E2E tests in `tests/e2e-server.py`.
 - [x] **Catch specific exceptions** - Replaced bare `except Exception:` with specific exceptions (`binascii.Error`, `DDGSException`, `genai_errors.ClientError`, etc.) where appropriate. Kept broad handlers only for top-level error recovery (streaming threads, request handlers).

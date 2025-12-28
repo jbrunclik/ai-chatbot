@@ -98,6 +98,9 @@ def get_current_user() -> User | None:
 def require_auth[F: Callable[..., Any]](f: F) -> F:
     """Decorator to require authentication for a route.
 
+    Injects the authenticated User as the first argument to the decorated function.
+    The function should have a signature like: def my_route(user: User, ...) -> ...
+
     Returns standardized error responses:
     - AUTH_REQUIRED (401): No token provided
     - AUTH_EXPIRED (401): Token has expired (prompts re-auth on frontend)
@@ -116,7 +119,7 @@ def require_auth[F: Callable[..., Any]](f: F) -> F:
             )
             g.current_user = local_user
             logger.debug("Auth bypassed", extra={"mode": Config.FLASK_ENV})
-            return f(*args, **kwargs)
+            return f(local_user, *args, **kwargs)
 
         token = get_token_from_request(request)
         if not token:
@@ -153,6 +156,6 @@ def require_auth[F: Callable[..., Any]](f: F) -> F:
 
         g.current_user = user
         logger.debug("Authentication successful", extra={"user_id": user_id, "path": request.path})
-        return f(*args, **kwargs)
+        return f(user, *args, **kwargs)
 
     return decorated  # type: ignore[return-value]
